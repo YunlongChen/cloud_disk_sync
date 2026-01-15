@@ -3,7 +3,7 @@ use crate::error::{ProviderError, SyncError};
 use crate::providers::{DownloadResult, FileInfo, StorageProvider, UploadResult};
 use async_trait::async_trait;
 use base64::Engine;
-use reqwest::{Client, Method, StatusCode};
+use reqwest::{Client, Method, StatusCode, Url};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info, instrument, warn};
@@ -12,6 +12,7 @@ use tracing::{debug, error, info, instrument, warn};
 pub struct WebDavProvider {
     client: Client,
     base_url: String,
+    path_prefix: String,
     username: String,
     password: String,
 }
@@ -47,11 +48,22 @@ impl WebDavProvider {
                 ProviderError::ConnectionFailed(e.to_string())
             })?;
 
-        info!(base_url = %url, "WebDAV Provider 初始化成功");
+        let parsed_url = Url::parse(url).map_err(|e| {
+            error!(error = %e, "URL 解析失败");
+            ProviderError::ConnectionFailed(format!("Invalid URL: {}", e))
+        })?;
+        
+        let path_prefix = urlencoding::decode(parsed_url.path())
+            .unwrap_or(std::borrow::Cow::Borrowed(parsed_url.path()))
+            .trim_end_matches('/')
+            .to_string();
+
+        info!(base_url = %url, path_prefix = %path_prefix, "WebDAV Provider 初始化成功");
 
         Ok(Self {
             client,
             base_url: url.trim_end_matches('/').to_string(),
+            path_prefix,
             username: username.clone(),
             password: password.clone(),
         })
@@ -80,73 +92,133 @@ impl WebDavProvider {
         base_path: &str,
     ) -> Result<Vec<FileInfo>, SyncError> {
         debug!("开始解析 PROPFIND 响应");
+        use quick_xml::events::Event;
+        use quick_xml::reader::Reader;
+
         let mut files = Vec::new();
+        let mut reader = Reader::from_str(xml);
+        reader.config_mut().trim_text(true);
+
+        let mut buf = Vec::new();
         
         let mut current_path: Option<String> = None;
         let mut current_size: u64 = 0;
         let mut is_collection = false;
+        
+        // 状态标记
         let mut in_response = false;
+        let mut in_href = false;
+        let mut in_prop = false;
+        let mut in_getcontentlength = false;
+        let mut in_resourcetype = false;
+        let mut in_collection = false;
 
-        for line in xml.lines() {
-            let line = line.trim();
-            if line.contains("<d:response>") || line.contains("<D:response>") {
-                in_response = true;
-                current_path = None;
-                current_size = 0;
-                is_collection = false;
-            } else if line.contains("</d:response>") || line.contains("</D:response>") {
-                if let Some(path) = current_path.take() {
-                     // 跳过基础路径本身
-                    if path != base_path && !path.is_empty() {
-                         files.push(FileInfo {
-                            path,
-                            size: current_size,
-                            modified: SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs() as i64,
-                            hash: None,
-                            is_dir: is_collection,
-                        });
-                    }
-                }
-                in_response = false;
-            }
-
-            if in_response {
-                if line.contains("<d:href>") || line.contains("<D:href>") {
-                    // 提取 href
-                     let start_tag = if line.contains("<d:href>") { "<d:href>" } else { "<D:href>" };
-                     let end_tag = if line.contains("</d:href>") { "</d:href>" } else { "</D:href>" };
-                     
-                     if let Some(start) = line.find(start_tag) {
-                        if let Some(end) = line.find(end_tag) {
-                            let href = &line[start + start_tag.len()..end];
-                            // Decode URL encoding if necessary (simplified here: assume no encoding for now)
-                            // let decoded_href = urlencoding::decode(href).unwrap_or(std::borrow::Cow::Borrowed(href));
-                            let path = href.trim_start_matches(&self.base_url).to_string();
-                            current_path = Some(path);
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(ref e)) => {
+                    let name = e.name();
+                    let name_str = String::from_utf8_lossy(name.as_ref()).to_lowercase();
+                    
+                    if name_str.ends_with("response") {
+                        in_response = true;
+                        current_path = None;
+                        current_size = 0;
+                        is_collection = false;
+                    } else if in_response {
+                        if name_str.ends_with("href") {
+                            in_href = true;
+                        } else if name_str.ends_with("prop") {
+                            in_prop = true;
+                        } else if in_prop {
+                            if name_str.ends_with("getcontentlength") {
+                                in_getcontentlength = true;
+                            } else if name_str.ends_with("resourcetype") {
+                                in_resourcetype = true;
+                            } else if in_resourcetype && name_str.ends_with("collection") {
+                                is_collection = true;
+                            }
                         }
                     }
                 }
-                
-                if line.contains("getcontentlength") {
-                    // 提取大小
-                    // 尝试匹配 >数字<
-                    if let Some(start) = line.find('>') {
-                        if let Some(end) = line[start+1..].find('<') {
-                             let size_str = &line[start+1..start+1+end];
-                             if let Ok(s) = size_str.parse::<u64>() {
-                                 current_size = s;
-                             }
+                Ok(Event::Empty(ref e)) => {
+                    let name = e.name();
+                    let name_str = String::from_utf8_lossy(name.as_ref()).to_lowercase();
+                    if in_resourcetype && name_str.ends_with("collection") {
+                        is_collection = true;
+                    }
+                }
+                Ok(Event::Text(e)) => {
+                    if in_href {
+                        // Workaround for unescape compilation error: use raw string conversion
+                        // This assumes standard URLs without complex XML entities needing unescape
+                        let href = String::from_utf8_lossy(e.as_ref()).to_string();
+                        
+                         // Decode URL encoding
+                        let decoded_href = urlencoding::decode(&href).unwrap_or(std::borrow::Cow::Borrowed(&href));
+                        let mut path = decoded_href.to_string();
+                        
+                        if path.starts_with(&self.base_url) {
+                            path = path.trim_start_matches(&self.base_url).to_string();
+                        } else if path.starts_with(&self.path_prefix) {
+                            path = path.trim_start_matches(&self.path_prefix).to_string();
+                        }
+                        
+                        // 确保路径以 / 开头（如果是根目录下的文件）
+                        if !path.starts_with('/') && !path.is_empty() {
+                            path = format!("/{}", path);
+                        }
+                        
+                        current_path = Some(path);
+                    } else if in_getcontentlength {
+                        let size_str = String::from_utf8_lossy(e.as_ref()).to_string();
+                        if let Ok(size) = size_str.parse::<u64>() {
+                            current_size = size;
                         }
                     }
                 }
-
-                if line.contains("<d:collection/>") || line.contains("<D:collection/>") {
-                    is_collection = true;
+                Ok(Event::End(ref e)) => {
+                    let name = e.name();
+                    let name_str = String::from_utf8_lossy(name.as_ref()).to_lowercase();
+                    
+                    if name_str.ends_with("response") {
+                        if let Some(path) = current_path.take() {
+                             // 跳过基础路径本身
+                             // Normalize paths for comparison (remove trailing slashes)
+                            let norm_path = path.trim_end_matches('/');
+                            let norm_base = base_path.trim_end_matches('/');
+                            
+                            if norm_path != norm_base && !path.is_empty() {
+                                 files.push(FileInfo {
+                                    path, // Keep original path (maybe with trailing slash for dirs)
+                                    size: current_size,
+                                    modified: SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_secs() as i64,
+                                    hash: None,
+                                    is_dir: is_collection,
+                                });
+                            }
+                        }
+                        in_response = false;
+                    } else if name_str.ends_with("href") {
+                        in_href = false;
+                    } else if name_str.ends_with("prop") {
+                        in_prop = false;
+                    } else if name_str.ends_with("getcontentlength") {
+                        in_getcontentlength = false;
+                    } else if name_str.ends_with("resourcetype") {
+                        in_resourcetype = false;
+                    }
                 }
+                Ok(Event::Eof) => break,
+                Err(e) => {
+                    error!("Error parsing XML: {:?}", e);
+                    break;
+                }
+                _ => {}
             }
+            buf.clear();
         }
 
         info!(
@@ -193,6 +265,8 @@ impl StorageProvider for WebDavProvider {
         }
 
         let body = response.text().await.map_err(|e| SyncError::Network(e))?;
+
+        debug!("PROPFIND Response Body: {}", body);
 
         self.parse_propfind_response(&body, path)
     }
