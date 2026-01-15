@@ -35,13 +35,14 @@ pub trait RetryStrategy: Send + Sync {
 }
 
 /// 流控策略 trait
+#[async_trait]
 pub trait RateLimiter: Send + Sync {
     async fn acquire<'a>(&'a self) -> Result<()>
     where
         Self: 'a;
 
     fn current_rate(&self) -> f64; // 请求/秒
-    fn set_rate(&self, requests_per_second: f64);
+    fn set_rate(&mut self, requests_per_second: f64);
     fn try_acquire(&self) -> bool;
 }
 
@@ -105,6 +106,7 @@ pub trait ConfigValidator: Send + Sync {
 }
 
 /// 健康检查 trait
+#[async_trait]
 pub trait HealthChecker: Send + Sync {
     async fn check_provider_health(&self, provider_id: &str) -> Result<HealthStatus>;
     async fn check_storage_health(&self) -> Result<StorageHealth>;

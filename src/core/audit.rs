@@ -50,7 +50,7 @@ pub struct AuditFilter {
 }
 
 pub struct DatabaseAuditLogger {
-    connection: Connection,
+    connection: std::sync::Mutex<Connection>,
 }
 
 impl DatabaseAuditLogger {
@@ -93,37 +93,33 @@ impl DatabaseAuditLogger {
             [],
         )?;
 
-        Ok(Self { connection })
+        Ok(Self { connection: std::sync::Mutex::new(connection) })
     }
 }
 
 impl AuditLogger for DatabaseAuditLogger {
     fn log_operation(&self, operation: AuditOperation) {
-        // 使用spawn_blocking避免阻塞async上下文
-        let op = operation.clone();
-
-        tokio::task::spawn_blocking(move || {
-            let _ = self.connection.execute(
-                r#"
-                INSERT INTO audit_logs
-                (id, timestamp, operation_type, user, resource, details, success, error_message, duration_ms, ip_address, user_agent)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-                "#,
-                rusqlite::params![
-                    op.id,
-                    op.timestamp.to_rfc3339(),
-                    serde_json::to_string(&op.operation_type).unwrap(),
-                    op.user,
-                    op.resource,
-                    serde_json::to_string(&op.details).unwrap(),
-                    op.success,
-                    op.error_message,
-                    op.duration_ms,
-                    op.ip_address,
-                    op.user_agent,
-                ],
-            );
-        });
+        let conn = self.connection.lock().unwrap();
+        let _ = conn.execute(
+            r#"
+            INSERT INTO audit_logs
+            (id, timestamp, operation_type, user, resource, details, success, error_message, duration_ms, ip_address, user_agent)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "#,
+            rusqlite::params![
+                operation.id,
+                operation.timestamp.to_rfc3339(),
+                serde_json::to_string(&operation.operation_type).unwrap(),
+                operation.user,
+                operation.resource,
+                serde_json::to_string(&operation.details).unwrap(),
+                operation.success,
+                operation.error_message,
+                operation.duration_ms as i64,
+                operation.ip_address,
+                operation.user_agent,
+            ],
+        );
     }
 
     fn query_operations(
@@ -166,12 +162,12 @@ impl AuditLogger for DatabaseAuditLogger {
 
         if let Some(min_duration) = filter.min_duration_ms {
             query.push_str(" AND duration_ms >= ?");
-            params.push(Box::new(min_duration));
+            params.push(Box::new(min_duration as i64));
         }
 
         if let Some(max_duration) = filter.max_duration_ms {
             query.push_str(" AND duration_ms <= ?");
-            params.push(Box::new(max_duration));
+            params.push(Box::new(max_duration as i64));
         }
 
         query.push_str(" ORDER BY timestamp DESC");
@@ -180,7 +176,8 @@ impl AuditLogger for DatabaseAuditLogger {
             query.push_str(&format!(" LIMIT {}", limit));
         }
 
-        let mut stmt = self.connection.prepare(&query)?;
+        let conn = self.connection.lock().unwrap();
+        let mut stmt = conn.prepare(&query)?;
 
         let mut rows = stmt.query(rusqlite::params_from_iter(params.into_iter()))?;
         let mut operations = Vec::new();
@@ -188,15 +185,22 @@ impl AuditLogger for DatabaseAuditLogger {
         while let Some(row) = rows.next()? {
             let operation = AuditOperation {
                 id: row.get(0)?,
-                timestamp: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)?
-                    .with_timezone(&Utc),
+                timestamp: {
+                    let ts: String = row.get(1)?;
+                    chrono::DateTime::parse_from_rfc3339(&ts)
+                        .map_err(|e| crate::error::SyncError::Validation(e.to_string()))?
+                        .with_timezone(&Utc)
+                },
                 operation_type: serde_json::from_str(&row.get::<_, String>(2)?)?,
                 user: row.get(3)?,
                 resource: row.get(4)?,
                 details: serde_json::from_str(&row.get::<_, String>(5)?)?,
                 success: row.get(6)?,
                 error_message: row.get(7)?,
-                duration_ms: row.get(8)?,
+                duration_ms: {
+                    let v: i64 = row.get(8)?;
+                    v as u64
+                },
                 ip_address: row.get(9)?,
                 user_agent: row.get(10)?,
             };

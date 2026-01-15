@@ -62,11 +62,13 @@ impl HealthChecker for HealthCheckerImpl {
 
         // 检查本地存储空间
         if let Some(data_dir) = dirs::data_dir() {
-            let disk = sysinfo::Disk::new(data_dir);
-            health.local_storage.available_space = disk.available_space();
-            health.local_storage.total_space = disk.total_space();
+            let avail = fs2::available_space(&data_dir).unwrap_or(0);
+            let total = fs2::total_space(&data_dir).unwrap_or(0);
+            health.local_storage.available_space = avail;
+            health.local_storage.total_space = total;
+            let used = total.saturating_sub(avail);
             health.local_storage.usage_percentage =
-                (disk.used_space() as f64 / disk.total_space() as f64) * 100.0;
+                if total > 0 { (used as f64 / total as f64) * 100.0 } else { 0.0 };
 
             if health.local_storage.usage_percentage > 90.0 {
                 health.overall = HealthStatus::Degraded {

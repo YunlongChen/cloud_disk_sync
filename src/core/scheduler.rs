@@ -1,6 +1,6 @@
 use crate::config::{Schedule, SyncTask};
 use crate::error::{Result, SyncError};
-use crate::format_bytes;
+use crate::utils::format_bytes;
 use crate::report::SyncReport;
 use crate::sync::engine::SyncEngine;
 use chrono::{DateTime, TimeZone, Utc};
@@ -476,16 +476,19 @@ impl SchedulerManager {
         }
 
         // 在后台执行
+        let task_id_cloned = task_id.to_string();
+        let scheduled_id = scheduled_task.id.clone();
+        let scheduled_sync_id = scheduled_task.sync_task_id.clone();
         tokio::spawn(async move {
-            log::info!("手动触发任务执行: {}", task_id);
+            log::info!("手动触发任务执行: {}", task_id_cloned);
 
             if let Err(e) = Self::execute_task(
                 &sync_engine,
-                &scheduled_task.id,
-                &scheduled_task.sync_task_id,
+                &scheduled_id,
+                &scheduled_sync_id,
                 &running_tasks,
             ).await {
-                log::error!("手动触发任务执行失败: {}: {}", task_id, e);
+                log::error!("手动触发任务执行失败: {}: {}", task_id_cloned, e);
             }
         });
 
@@ -597,11 +600,11 @@ impl SchedulerManager {
         match format {
             ExportFormat::Json => {
                 serde_json::to_string_pretty(&*tasks)
-                    .map_err(|e| SyncError::Serialization(e.into()))
+                    .map_err(|e| SyncError::Validation(e.to_string()))
             }
             ExportFormat::Yaml => {
                 serde_yaml::to_string(&*tasks)
-                    .map_err(|e| SyncError::Serialization(e.into()))
+                    .map_err(|e| SyncError::Validation(e.to_string()))
             }
             ExportFormat::Csv => {
                 Self::tasks_to_csv(&tasks)
@@ -614,11 +617,11 @@ impl SchedulerManager {
         let tasks: Vec<ScheduledTask> = match format {
             ExportFormat::Json => {
                 serde_json::from_str(data)
-                    .map_err(|e| SyncError::Serialization(e.into()))?
+                    .map_err(|e| SyncError::Validation(e.to_string()))?
             }
             ExportFormat::Yaml => {
                 serde_yaml::from_str(data)
-                    .map_err(|e| SyncError::Serialization(e.into()))?
+                    .map_err(|e| SyncError::Validation(e.to_string()))?
             }
             ExportFormat::Csv => {
                 return Err(SyncError::Unsupported("CSV导入暂不支持".into()));
@@ -804,7 +807,7 @@ impl TaskNotifier {
             report.duration_seconds,
             report.statistics.files_synced,
             format_bytes(report.statistics.transferred_bytes),
-            report.generate_summary()
+            report.summary()
         );
 
         self.send_notification(&message).await
@@ -886,7 +889,7 @@ pub async fn cmd_schedule_task(
     println!("⏰ 为任务配置计划执行: {}", task_id);
 
     // 获取同步任务
-    let sync_task = config_manager.get_task(task_id).ok_or_else(|| format!("任务不存在: {}", task_id))?;
+    let sync_task = config_manager.get_task(task_id).ok_or_else(|| SyncError::Validation(format!("任务不存在: {}", task_id)))?;
 
     // 解析调度配置
     let schedule = if schedule_str == "manual" {
@@ -894,7 +897,8 @@ pub async fn cmd_schedule_task(
     } else if let Ok(seconds) = schedule_str.parse::<u64>() {
         Schedule::Interval { seconds }
     } else if schedule_str.starts_with("interval:") {
-        let seconds = schedule_str.trim_start_matches("interval:").parse::<u64>()?;
+        let seconds = schedule_str.trim_start_matches("interval:").parse::<u64>()
+            .map_err(|e| SyncError::Validation(e.to_string()))?;
         Schedule::Interval { seconds }
     } else {
         // 尝试解析为cron表达式
@@ -965,14 +969,14 @@ pub async fn cmd_list_scheduled_tasks(
         };
 
         table.add_row(row![
-            &task.id[..8], // 显示短ID
-            &task.name,
+            task.id.clone(),
+            task.name.clone(),
             match &task.schedule {
                 Schedule::Cron(s) => format!("cron: {}", s),
                 Schedule::Interval { seconds } => format!("间隔: {}秒", seconds),
                 Schedule::Manual => "手动".to_string(),
             },
-            task.format_next_run(),
+            "—".to_string(),
             status,
             health,
             last_result

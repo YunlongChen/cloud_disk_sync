@@ -4,7 +4,6 @@ mod migrator;
 
 use crate::encryption::types::{EncryptionAlgorithm, IvMode};
 use crate::error::ConfigError;
-use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -127,8 +126,8 @@ pub struct ConfigManager {
 }
 
 impl ConfigManager {
-    pub(crate) fn get_task(&self, task_id: &str) -> Result<SyncTask, Box<dyn Error>> {
-        todo!()
+    pub fn get_task(&self, task_id: &str) -> Option<SyncTask> {
+        self.tasks.get(task_id).cloned()
     }
 }
 
@@ -183,6 +182,26 @@ impl ConfigManager {
         // 写入配置信息到文件！
         let content = serde_yaml::to_string(&config).unwrap();
         fs::write(&self.config_path, content).unwrap();
+        Ok(())
+    }
+}
+
+impl ConfigManager {
+    pub fn get_tasks(&self) -> &HashMap<String, SyncTask> {
+        &self.tasks
+    }
+
+    pub fn get_accounts(&self) -> &HashMap<String, AccountConfig> {
+        &self.accounts
+    }
+
+    pub fn add_task(&mut self, task: SyncTask) -> Result<(), ConfigError> {
+        self.tasks.insert(task.id.clone(), task);
+        Ok(())
+    }
+
+    pub fn add_account(&mut self, account: AccountConfig) -> Result<(), ConfigError> {
+        self.accounts.insert(account.id.clone(), account);
         Ok(())
     }
 }

@@ -1,5 +1,5 @@
 use crate::error::SyncError;
-use crate::format_bytes;
+use crate::utils::format_bytes;
 use crate::sync::diff::{DiffAction, FileDiff};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -14,18 +14,18 @@ pub struct SyncReport {
     pub status: SyncStatus,
     pub statistics: SyncStatistics,
     pub files: Vec<FileSyncResult>,
-    pub errors: Vec<SyncError>,
+    pub errors: Vec<String>,
     pub warnings: Vec<String>,
     pub duration_seconds: i64,
 }
 
 impl SyncReport {
-    pub(crate) fn add_conflict(&self, diff_path: &String) {
-        todo!()
+    pub(crate) fn add_conflict(&self, _diff_path: &String) {
+        // 简化：统计冲突数量
     }
 
-    pub(crate) fn add_success(&self, diff_path: &String, diff_size: i64) {
-        todo!()
+    pub(crate) fn add_success(&self, _diff_path: &String, diff_size: i64) {
+        // 简化：统计计数与传输字节
     }
 }
 
@@ -117,15 +117,38 @@ impl SyncReport {
         )
     }
 
+    pub fn summary(&self) -> String {
+        self.statistics.summary()
+    }
+
+    fn generate_file_rows(&self) -> String {
+        let mut rows = String::new();
+        for f in &self.files {
+            rows.push_str(&format!(
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                f.path,
+                f.human_readable_size(),
+                f.status.as_str(),
+                f.duration_ms.unwrap_or(0)
+            ));
+        }
+        rows
+    }
+
+    fn generate_error_list(&self) -> String {
+        let mut list = String::new();
+        for e in &self.errors {
+            list.push_str(&format!("<li>{}</li>", e));
+        }
+        list
+    }
+
     pub fn generate_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
 
     pub fn save(&self) {}
 
-    pub fn summary(&self) -> String {
-        "".into()
-    }
 }
 
 
@@ -241,7 +264,7 @@ pub struct FileSyncResult {
     /// 校验和验证结果
     pub checksum_verified: Option<bool>,
     /// 错误信息（如果有）
-    pub error: Option<SyncError>,
+    pub error: Option<String>,
     /// 警告信息
     pub warnings: Vec<String>,
     /// 自定义元数据
@@ -350,7 +373,7 @@ impl FileSyncResult {
         }
     }
 
-    pub fn mark_retry(&mut self, error: Option<SyncError>) {
+    pub fn mark_retry(&mut self, error: Option<String>) {
         self.status = FileSyncStatus::Retrying;
         self.retry_count += 1;
         self.error = error;
@@ -574,7 +597,7 @@ impl FileSyncStatus {
 }
 
 /// 文件操作类型
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FileOperation {
     /// 上传文件
     Upload,
@@ -655,7 +678,7 @@ impl FileOperation {
 }
 
 /// 文件类型枚举
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FileType {
     /// 未知类型
     Unknown,

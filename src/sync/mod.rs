@@ -6,7 +6,7 @@ pub struct VerificationResult {
     pub passed: i32,
     pub failed: i32,
     pub skipped: i32,
-    pub errors: [ErrorResult],
+    pub errors: Vec<ErrorResult>,
 }
 
 struct ErrorResult {}

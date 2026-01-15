@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use crate::format_bytes;
+use crate::utils::format_bytes;
 
 /// 文件差异操作类型
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum DiffAction {
     /// 需要上传到目标
     Upload,
@@ -993,28 +993,20 @@ impl DiffDetector {
     }
 
     fn detect_conflicts(&self, result: &mut DiffResult) {
-        // 检测冲突情况（如同名目录和文件）
-        let mut path_map = std::collections::HashMap::new();
-
-        for diff in &mut result.files {
-            path_map.entry(&diff.path)
-                .or_insert_with(Vec::new)
-                .push(diff);
+        let mut path_map: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
+        for (idx, diff) in result.files.iter().enumerate() {
+            path_map.entry(diff.path.clone()).or_default().push(idx);
         }
-
-        for diffs in path_map.values_mut() {
-            if diffs.len() > 1 {
-                // 检测冲突类型
-                let has_upload = diffs.iter().any(|d| d.action == DiffAction::Upload);
-                let has_delete = diffs.iter().any(|d| d.action == DiffAction::Delete);
-                let has_update = diffs.iter().any(|d| d.action == DiffAction::Update);
-
+        for indices in path_map.values() {
+            if indices.len() > 1 {
+                let has_upload = indices.iter().any(|&i| result.files[i].action == DiffAction::Upload);
+                let has_delete = indices.iter().any(|&i| result.files[i].action == DiffAction::Delete);
+                let has_update = indices.iter().any(|&i| result.files[i].action == DiffAction::Update);
                 if (has_upload && has_delete) || (has_upload && has_update) {
-                    // 标记为冲突
-                    for diff in diffs {
-                        if let (Some(source), Some(target)) = (&diff.source_info, &diff.target_info) {
-                            *diff = &mut FileDiff::conflict(
-                                diff.path.clone(),
+                    for &i in indices {
+                        if let (Some(source), Some(target)) = (&result.files[i].source_info, &result.files[i].target_info) {
+                            result.files[i] = FileDiff::conflict(
+                                result.files[i].path.clone(),
                                 source.clone(),
                                 target.clone(),
                             );
@@ -1154,4 +1146,23 @@ fn detect_mime_type(extension: &std::ffi::OsStr) -> String {
         "h" | "hpp" => "text/x-c++",
         _ => "application/octet-stream",
     }.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_diff_result_add_file_and_summary() {
+        let mut result = DiffResult::new();
+        let file = FileDiff::new(
+            "a.txt".to_string(),
+            DiffAction::Upload,
+            Some(FileMetadata::new(PathBuf::from("a.txt"))),
+            None,
+        );
+        result.add_file(file);
+        assert_eq!(result.total_files, 1);
+        let s = result.summary();
+        assert!(s.contains("文件总数"));
+    }
 }

@@ -7,13 +7,17 @@ mod sync;
 mod error;
 mod core;
 mod plugins;
+mod utils;
 
 use crate::cli::Cli;
 use crate::config::{AccountConfig, ConfigManager, ProviderType, RateLimitConfig, RetryPolicy, Schedule, SyncTask};
 use crate::sync::engine::SyncEngine;
+use crate::utils::format_bytes;
+// 移除未解析的类型导入，直接使用方法返回推断类型
 use aes_gcm::aead::Aead;
 use clap::Parser;
-use rand::{rng, Rng};
+use cli::Commands;
+use rand::{thread_rng, Rng};
 use std::fs;
 use tracing_subscriber;
 
@@ -23,43 +27,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
-    let config_manager = ConfigManager::new()?;
+    let mut config_manager = ConfigManager::new()?;
 
     match cli.command {
-        cli::Commands::Run {
+        Commands::Run {
             task,
             dry_run,
             resume,
         } => {
             cmd_run_task(&config_manager, &task, dry_run, resume).await?;
         }
-        cli::Commands::AddAccount {
+        Commands::AddAccount {
             name,
             provider,
             token,
         } => {
-            cmd_add_account(&config_manager, name, provider, token).await?;
+            cmd_add_account(&mut config_manager, name, provider, token).await?;
         }
-        cli::Commands::CreateTask {
+        Commands::CreateTask {
             name,
             source,
             target,
             schedule,
             encrypt,
         } => {
-            cmd_create_task(&config_manager, name, source, target, schedule, encrypt).await?;
+            cmd_create_task(&mut config_manager, name, source, target, schedule, encrypt).await?;
         }
-        cli::Commands::List => {
+        Commands::List => {
             cmd_list_tasks(&config_manager)?;
         }
-        cli::Commands::Report { task, detailed } => {
+        Commands::Report { task, detailed } => {
             cmd_generate_report(&task, detailed)?;
         }
-        cli::Commands::Verify { task, all } => {
+        Commands::Verify { task, all } => {
             cmd_verify_integrity(&task, all).await?;
         }
-        cli::Commands::GenKey { name, strength } => {
+        Commands::GenKey { name, strength } => {
             cmd_generate_key(&name, strength)?;
+        },
+        Commands::Plugins => {
+            println!("查看所有插件！")
         }
     }
 
@@ -83,8 +90,7 @@ async fn cmd_verify_integrity(
     let progress_bar = ProgressBar::new(0);
     progress_bar.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>7}/{len:7} {msg}")
-            .unwrap()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>7}/{len:7} {msg}")?
             .progress_chars("#>-")
     );
     progress_bar.set_message("正在验证...");
@@ -136,7 +142,7 @@ async fn cmd_verify_integrity(
     Ok(())
 }
 
-fn cmd_generate_report(p0: &String, p1: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_generate_report(task: &String, show_detail: bool) -> Result<(), Box<dyn std::error::Error>> {
     todo!()
 }
 
@@ -161,10 +167,8 @@ fn cmd_generate_key(
 
 
     // 生成随机密钥
-    let mut rng = rng();
     let mut key_bytes = vec![0u8; key_size];
-    rng.fill(&mut key_bytes)
-        .map_err(|e| format!("生成密钥失败: {}", e))?;
+    thread_rng().fill(&mut key_bytes[..]);
 
     // 创建密钥存储目录
     let keys_dir = dirs::data_dir()
@@ -374,7 +378,7 @@ fn get_task_status(task: &SyncTask) -> String {
 }
 
 async fn cmd_create_task(
-    config_manager: &ConfigManager,
+    config_manager: &mut ConfigManager,
     name: String,
     source_str: String,
     target_str: String,
@@ -536,7 +540,7 @@ fn parse_account_path(path_str: &str) -> Result<(String, String), Box<dyn std::e
 }
 
 async fn cmd_add_account(
-    config_manager: &ConfigManager,
+    config_manager: &mut ConfigManager,
     name: String,
     provider_str: String,
     token: Option<String>,
@@ -799,9 +803,6 @@ async fn verify_webdav_account(account: &AccountConfig) -> Result<(), Box<dyn st
 }
 
 use crate::encryption::types::{EncryptionAlgorithm, IvMode};
-use crate::error::{ProviderError, SyncError};
-use crate::report::SyncReport;
-use crate::sync::diff::FileDiff;
 // use smb::{Client, ClientConfig, ReadAtChannel};
 
 // async fn verify_smb_account(account: &AccountConfig) -> Result<(), Box<dyn std::error::Error>> {
@@ -846,20 +847,20 @@ async fn cmd_run_task(
 
     if dry_run {
         println!("Dry run mode - showing what would be synced:");
-        let diff = engine.calculate_diff_for_dry_run(task).await?;
+        let diff = engine.calculate_diff_for_dry_run(&task).await?;
         println!("Files to sync: {}", diff.files.len());
         for file in diff.files {
             println!("  {} ({})", file.path, format_bytes(file.size_diff as u64));
         }
     } else {
         let progress_bar = indicatif::ProgressBar::new(100);
-        progress_bar.set_style(
-            indicatif::ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>7}/{len:7} {msg}")
-                ?.progress_chars("#>-")
-        );
+        let style = indicatif::ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>7}/{len:7} {msg}")
+            .unwrap()
+            .progress_chars("#>-");
+        progress_bar.set_style(style);
 
-        let report = engine.sync_with_progress(task, |progress| {
+        let report = engine.sync_with_progress(&task, |progress| {
             progress_bar.set_position(progress.percentage as u64);
             progress_bar.set_message(format!(
                 "{}/{}",
@@ -871,192 +872,11 @@ async fn cmd_run_task(
         progress_bar.finish_with_message("Sync completed!");
 
         // 保存报告
-        report.save()?;
+        report.save();
 
         // 显示报告
         println!("{}", report.summary());
     }
 
     Ok(())
-}
-
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
-
-    if bytes == 0 {
-        return "0 B".to_string();
-    }
-
-    let base = 1024.0;
-    let exponent = (bytes as f64).log(base).floor() as u32;
-    let unit = UNITS[exponent.min(5) as usize];
-    let value = bytes as f64 / base.powi(exponent as i32);
-
-    format!("{:.2} {}", value, unit)
-}
-
-
-// 在适当的模块中实现这些辅助函数
-
-// 同步引擎的 verify_integrity 方法实现
-impl SyncEngine {
-    pub async fn verify_integrity(
-        &self,
-        task: &SyncTask,
-        verify_all: bool,
-        progress_callback: impl Fn(VerificationProgress),
-    ) -> Result<VerificationResult, SyncError> {
-        let source_provider = self.get_provider(&task.source_account)
-            .ok_or(SyncError::Provider(ProviderError::NotFound("")))?;
-
-        let target_provider = self.get_provider(&task.target_account)
-            .ok_or(SyncError::Provider(ProviderError::NotFound("")))?;
-
-        let mut result = VerificationResult::new();
-
-        // 获取文件列表
-        let source_files = self.walk_directory(source_provider.as_ref(), &task.source_path).await?;
-        let target_files = self.walk_directory(target_provider.as_ref(), &task.target_path).await?;
-
-        // 验证文件完整性
-        for (path, source_info) in &source_files {
-            progress_callback(VerificationProgress {
-                current_path: path.clone(),
-                current_file: result.checked_files + 1,
-                total_files: source_files.len(),
-            });
-
-            if let Some(target_info) = target_files.get(path) {
-                // 验证文件哈希
-                if let (Some(source_hash), Some(target_hash)) = (&source_info.hash, &target_info.hash) {
-                    if source_hash == target_hash {
-                        result.passed += 1;
-                    } else {
-                        result.failed += 1;
-                        result.errors.push(format!("文件哈希不匹配: {}", path));
-                    }
-                } else {
-                    // 如果没有哈希信息，比较大小和修改时间
-                    if source_info.size == target_info.size {
-                        result.passed += 1;
-                    } else {
-                        result.failed += 1;
-                        result.errors.push(format!("文件大小不匹配: {}", path));
-                    }
-                }
-            } else {
-                result.skipped += 1;
-            }
-
-            result.checked_files += 1;
-        }
-
-        result.total_files = source_files.len();
-        Ok(result)
-    }
-
-    pub async fn repair_integrity(
-        &self,
-        task: &SyncTask,
-        verification_result: &VerificationResult,
-    ) -> Result<RepairResult, SyncError> {
-        // 实现修复逻辑
-        Ok(RepairResult::default())
-    }
-
-    pub async fn sync_with_progress(
-        &self,
-        task: &SyncTask,
-        progress_callback: impl Fn(SyncProgress),
-    ) -> Result<SyncReport, SyncError> {
-        // 实现带进度的同步
-        Ok(SyncReport::new())
-    }
-
-    pub async fn calculate_diff_for_dry_run(
-        &self,
-        task: &SyncTask,
-    ) -> Result<DryRunResult, SyncError> {
-        // 实现模拟执行的计算
-        Ok(DryRunResult::default())
-    }
-}
-
-// 进度结构体
-pub struct VerificationProgress {
-    pub current_path: String,
-    pub current_file: usize,
-    pub total_files: usize,
-}
-
-pub struct SyncProgress {
-    pub current_file: String,
-    pub current_file_size: u64,
-    pub transferred: u64,
-    pub total: u64,
-    pub percentage: f64,
-    pub speed: f64,
-}
-
-// 结果结构体
-pub struct VerificationResult {
-    pub total_files: usize,
-    pub checked_files: usize,
-    pub passed: usize,
-    pub failed: usize,
-    pub skipped: usize,
-    pub errors: Vec<String>,
-}
-
-impl VerificationResult {
-    pub fn new() -> Self {
-        VerificationResult {
-            total_files: 0,
-            checked_files: 0,
-            passed: 0,
-            failed: 0,
-            skipped: 0,
-            errors: vec![],
-        }
-    }
-}
-
-pub struct RepairResult {
-    pub repaired_files: usize,
-    pub repaired_bytes: u64,
-}
-
-impl RepairResult {}
-
-impl Default for RepairResult {
-    fn default() -> Self {
-        RepairResult {
-            repaired_files: 0,
-            repaired_bytes: 0,
-        }
-    }
-}
-
-pub struct DryRunResult {
-    pub total_files: usize,
-    pub files_to_upload: usize,
-    pub files_to_download: usize,
-    pub files_to_delete: usize,
-    pub total_size: u64,
-    pub conflicts: Vec<String>,
-    pub files: Vec<FileDiff>,
-}
-
-impl Default for DryRunResult {
-    fn default() -> Self {
-        DryRunResult {
-            total_files: 0,
-            files_to_upload: 0,
-            files_to_download: 0,
-            files_to_delete: 0,
-            total_size: 0,
-            conflicts: vec![],
-            files: vec![],
-        }
-    }
 }

@@ -15,6 +15,29 @@ pub struct TokenBucketRateLimiter {
     semaphore: Arc<Semaphore>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{TokenBucketRateLimiter, SlidingWindowRateLimiter};
+    use crate::core::traits::RateLimiter;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_token_bucket_acquire() {
+        let limiter = TokenBucketRateLimiter::new(2, 10.0);
+        assert!(limiter.try_acquire());
+        assert!(limiter.try_acquire());
+        assert!(!limiter.try_acquire());
+        limiter.acquire().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_sliding_window_acquire() {
+        let limiter = SlidingWindowRateLimiter::new(Duration::from_millis(100), 1);
+        assert!(limiter.try_acquire());
+        assert!(!limiter.try_acquire());
+        limiter.acquire().await.unwrap();
+    }
+}
 impl TokenBucketRateLimiter {
     pub fn new(capacity: u64, requests_per_second: f64) -> Self {
         Self {
@@ -73,13 +96,8 @@ impl RateLimiter for TokenBucketRateLimiter {
         self.refill_rate
     }
 
-    fn set_rate(&self, requests_per_second: f64) {
-        // 需要实现原子的更新
-        // 这里简化处理
-        unsafe {
-            let self_mut = &mut *(self as *const Self as *mut Self);
-            self_mut.refill_rate = requests_per_second;
-        }
+    fn set_rate(&mut self, requests_per_second: f64) {
+        self.refill_rate = requests_per_second;
     }
 
     fn try_acquire(&self) -> bool {
@@ -116,9 +134,9 @@ impl SlidingWindowRateLimiter {
     }
 
     fn cleanup_old_requests(&self) {
-        let mut requests = self.requests.lock();
+        let mut requests = self.requests.lock().unwrap();
         let cutoff = Instant::now() - self.window_size;
-        requests.unwrap().retain(|&time| time > cutoff);
+        requests.retain(|&time| time > cutoff);
     }
 }
 
@@ -130,42 +148,41 @@ impl RateLimiter for SlidingWindowRateLimiter {
     {
         loop {
             self.cleanup_old_requests();
-
-            let requests = self.requests.lock();
-            if requests.len() < self.max_requests as usize {
-                drop(requests);
-                break;
+            let wait_time_opt = {
+                let requests = self.requests.lock().unwrap();
+                if requests.len() < self.max_requests as usize {
+                    None
+                } else {
+                    let oldest = *requests.first().unwrap();
+                    Some(self.window_size - oldest.elapsed())
+                }
+            };
+            if let Some(wait_time) = wait_time_opt {
+                if wait_time > Duration::ZERO {
+                    tokio::time::sleep(wait_time).await;
+                    continue;
+                }
             }
-
-            // 计算需要等待的时间
-            let oldest = requests.first().unwrap();
-            let wait_time = self.window_size - oldest.elapsed();
-            if wait_time > Duration::from_secs(0) {
-                tokio::time::sleep(wait_time).await;
-            }
+            let mut requests = self.requests.lock().unwrap();
+            requests.push(Instant::now());
+            return Ok(());
         }
-
-        // 添加当前请求
-        let mut requests = self.requests.lock();
-        requests.push(Instant::now());
-        Ok(())
     }
 
     fn current_rate(&self) -> f64 {
         self.cleanup_old_requests();
-        let requests = self.requests.lock();
+        let requests = self.requests.lock().unwrap();
         requests.len() as f64 / self.window_size.as_secs_f64()
     }
 
-    fn set_rate(&self, requests_per_second: f64) {
+    fn set_rate(&mut self, requests_per_second: f64) {
         // 调整窗口大小或最大请求数
         // 这里简化处理
     }
 
     fn try_acquire(&self) -> bool {
         self.cleanup_old_requests();
-
-        let mut requests = self.requests.lock();
+        let mut requests = self.requests.lock().unwrap();
         if requests.len() < self.max_requests as usize {
             requests.push(Instant::now());
             true

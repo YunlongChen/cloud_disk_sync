@@ -1,4 +1,5 @@
-use rand::rng;
+use rand::rngs::OsRng;
+use rand::RngCore;
 // src/encryption/types.rs
 use serde::{Deserialize, Serialize};
 
@@ -94,10 +95,10 @@ impl IvMode {
     }
 
     fn generate_random_iv(&self, size: usize) -> Vec<u8> {
-        let mut rng = rng();
         let mut iv = vec![0u8; size];
-        // rng.fill(&mut iv).unwrap();
-        todo!();
+        for b in iv.iter_mut() {
+            *b = rand::random();
+        }
         iv
     }
 

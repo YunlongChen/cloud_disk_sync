@@ -18,23 +18,15 @@ impl HookManager {
     }
 
     pub fn register_handler(&mut self, handler: Box<dyn HookHandler>) {
-        // 获取处理程序支持的所有钩子类型
-        // 这里需要handler提供一个方法返回支持的钩子列表
-        // 简化处理：假设所有handler支持所有钩子
-        for hook_type in Self::all_hook_types() {
-            let handlers = self.handlers.entry(hook_type.to_string())
-                .or_insert_with(Vec::new);
-            handlers.push(handler.clone_box());
-        }
+        let handlers = self.handlers.entry("all".to_string()).or_insert_with(Vec::new);
+        handlers.push(handler);
     }
 
     pub async fn execute_hook(&self, hook: PluginHook, context: &mut HookContext) -> Result<()> {
-        let hook_name = hook.name();
-
-        if let Some(handlers) = self.handlers.get(hook_name) {
+        if let Some(handlers) = self.handlers.get("all") {
             // 按优先级排序
             let mut sorted_handlers: Vec<_> = handlers.iter()
-                .map(|h| (h.get_priority(&hook), h))
+                .map(|h| (h.get_priority(&hook), h.as_ref()))
                 .collect();
 
             sorted_handlers.sort_by(|a, b| b.0.cmp(&a.0)); // 降序，高优先级先执行
@@ -49,22 +41,11 @@ impl HookManager {
         Ok(())
     }
 
-    fn all_hook_types() -> Vec<&'static str> {
-        vec![
-            "pre_sync",
-            "post_sync",
-            "pre_file_upload",
-            "post_file_upload",
-            "on_error",
-            "file_filter",
-            "filename_transform",
-            "pre_encryption",
-            "post_decryption",
-        ]
-    }
+    fn all_hook_types() -> Vec<&'static str> { vec!["all"] }
 }
 
 /// 基础插件实现示例
+#[derive(Clone)]
 pub struct LoggingPlugin {
     name: String,
     version: String,
@@ -169,22 +150,4 @@ impl HookHandler for LoggingPlugin {
     }
 }
 
-// 克隆trait对象的辅助方法
-trait CloneBox: HookHandler {
-    fn clone_box(&self) -> Box<dyn HookHandler>;
-}
-
-impl<T> CloneBox for T
-where
-    T: HookHandler + Clone + 'static,
-{
-    fn clone_box(&self) -> Box<dyn HookHandler> {
-        Box::new(self.clone())
-    }
-}
-
-impl Clone for Box<dyn HookHandler> {
-    fn clone(&self) -> Box<dyn HookHandler> {
-        self.clone_box()
-    }
-}
+// 简化：不支持克隆 trait 对象，统一在 \"all\" 分组下执行
