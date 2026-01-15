@@ -1,0 +1,54 @@
+[package]
+name = "cloud_disk_sync"
+version = "0.1.0"
+edition = "2024"
+
+[workspace.package]
+edition = "2021"
+homepage = "https://www.chenyunlong.cn/stan/cloud_file_sync"
+license = "MIT"
+repository = "https://gitea.chenyunlong.cn/stan/cloud_file_sync"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+clap = { version = "4.0", features = ["derive"] }
+indicatif = "0.18.3"
+reqwest = { version = "0.13.1", features = ["json", "native-tls"], default-features = false }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rusqlite = { version = "0.38.0", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+aes-gcm = "0.10"
+walkdir = "2.3"
+futures = "0.3"
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "2.0.17"
+dirs = "6.0.0"
+parking_lot = "0.12"
+dashmap = "6.1.0"
+async-trait = "0.1.89"
+rand = "0.9.2"
+sysinfo = "0.37.2"
+sys-info = "0.9.1"
+fs2 = "0.4.3"
+rlimit = "0.10.2"
+uuid = { version = "1.19.0", features = ["v4"] }
+log = "0.4.29"
+dialoguer = "0.12.0"
+base64 = "0.22.1"
+
+prettytable = "0.10.0"
+rpassword = "7.4.0"
+pbkdf2 = "0.13.0-rc.1"
+hmac = "0.13.0-rc.2"
+cron = "0.15.0"
+csv = "1.4.0"
+tokio-cron-scheduler = "0.15.1"
+
+[dev-dependencies]
+warp = "0.3"
+bytes = "1.5"
