@@ -95,6 +95,25 @@ impl SyncEngine {
     }
 
     pub async fn sync(&mut self, task: &SyncTask) -> Result<SyncReport, SyncError> {
+        self.execute_sync(task, None::<fn(SyncProgress)>).await
+    }
+
+    pub async fn sync_with_progress(
+        &mut self,
+        task: &SyncTask,
+        progress_callback: impl Fn(SyncProgress) + Send + Sync + 'static,
+    ) -> Result<SyncReport, SyncError> {
+        self.execute_sync(task, Some(progress_callback)).await
+    }
+
+    async fn execute_sync<F>(
+        &self,
+        task: &SyncTask,
+        progress_callback: Option<F>,
+    ) -> Result<SyncReport, SyncError>
+    where
+        F: Fn(SyncProgress) + Send + Sync + 'static,
+    {
         info!(task_id = %task.id, "Starting sync task: {}", task.name);
         let mut report = SyncReport::new();
         report.task_id = task.id.clone();
@@ -126,6 +145,10 @@ impl SyncEngine {
 
         info!(task_id = %task.id, total_files = diff.files.len(), "Diff calculation completed");
 
+        let total_transfer_size = diff.total_transfer_size;
+        let mut transferred_size = 0u64;
+        let start_time = std::time::Instant::now();
+
         // 执行同步
         for file_diff in diff.files {
             match file_diff.action {
@@ -143,6 +166,24 @@ impl SyncEngine {
                                 task.target_account.clone(),
                             )))?;
 
+                    let file_size = file_diff.transfer_size();
+                    
+                    // 通知进度：开始
+                    if let Some(ref cb) = progress_callback {
+                        cb(SyncProgress {
+                            current_file: file_diff.path.clone(),
+                            current_file_size: file_size,
+                            transferred: transferred_size,
+                            total: total_transfer_size,
+                            percentage: if total_transfer_size > 0 {
+                                (transferred_size as f64 / total_transfer_size as f64) * 100.0
+                            } else {
+                                0.0
+                            },
+                            speed: 0.0,
+                        });
+                    }
+
                     match self
                         .sync_file(
                             source_provider.as_ref(),
@@ -155,6 +196,30 @@ impl SyncEngine {
                     {
                         Ok(_) => {
                             debug!(file = %file_diff.path, "Sync successful");
+                            transferred_size += file_size;
+                            
+                            // 通知进度：完成
+                            if let Some(ref cb) = progress_callback {
+                                let elapsed = start_time.elapsed().as_secs_f64();
+                                let speed = if elapsed > 0.0 {
+                                    transferred_size as f64 / elapsed
+                                } else {
+                                    0.0
+                                };
+                                
+                                cb(SyncProgress {
+                                    current_file: file_diff.path.clone(),
+                                    current_file_size: file_size,
+                                    transferred: transferred_size,
+                                    total: total_transfer_size,
+                                    percentage: if total_transfer_size > 0 {
+                                        (transferred_size as f64 / total_transfer_size as f64) * 100.0
+                                    } else {
+                                        100.0
+                                    },
+                                    speed,
+                                });
+                            }
                         }
                         Err(e) => {
                             error!(file = %file_diff.path, error = %e, "Sync failed");
@@ -207,6 +272,7 @@ impl SyncEngine {
         info!(task_id = %task.id, stats = ?report.statistics, "Sync task completed");
         Ok(report)
     }
+
 }
 
 // 进度结构体与结果类型
@@ -324,14 +390,6 @@ impl SyncEngine {
         _verification_result: &VerificationResult,
     ) -> Result<RepairResult, SyncError> {
         Ok(RepairResult::default())
-    }
-
-    pub async fn sync_with_progress(
-        &self,
-        _task: &SyncTask,
-        _progress_callback: impl Fn(SyncProgress),
-    ) -> Result<SyncReport, SyncError> {
-        Ok(SyncReport::new())
     }
 
     pub async fn calculate_diff_for_dry_run(

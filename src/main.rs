@@ -1409,7 +1409,23 @@ async fn cmd_run_task(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let task = config_manager.get_task(task_id).ok_or("Task not found")?;
 
-    let engine = SyncEngine::new().await?;
+    let mut engine = SyncEngine::new().await?;
+
+    // 注册源提供商
+    let source_account = config_manager
+        .get_account(&task.source_account)
+        .ok_or_else(|| format!("源账户不存在: {}", task.source_account))?;
+    
+    let source_provider = create_provider(&source_account).await?;
+    engine.register_provider(task.source_account.clone(), source_provider);
+
+    // 注册目标提供商
+    let target_account = config_manager
+        .get_account(&task.target_account)
+        .ok_or_else(|| format!("目标账户不存在: {}", task.target_account))?;
+
+    let target_provider = create_provider(&target_account).await?;
+    engine.register_provider(task.target_account.clone(), target_provider);
 
     if dry_run {
         println!("Dry run mode - showing what would be synced:");
@@ -1428,10 +1444,11 @@ async fn cmd_run_task(
             .progress_chars("#>-");
         progress_bar.set_style(style);
 
+        let pb = progress_bar.clone();
         let report = engine
-            .sync_with_progress(&task, |progress| {
-                progress_bar.set_position(progress.percentage as u64);
-                progress_bar.set_message(format!(
+            .sync_with_progress(&task, move |progress| {
+                pb.set_position(progress.percentage as u64);
+                pb.set_message(format!(
                     "{}/{}",
                     format_bytes(progress.transferred),
                     format_bytes(progress.total)
