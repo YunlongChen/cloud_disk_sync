@@ -72,33 +72,78 @@ pub enum Commands {
 pub enum AccountCmd {
     /// Create a new cloud storage account
     Create {
-        #[arg(short, long)]
-        name: String,
+        /// Account Name (positional)
+        name_or_id: Option<String>,
 
         #[arg(short, long)]
-        provider: String,
+        name: Option<String>,
+
+        #[arg(short, long)]
+        provider: Option<String>,
 
         #[arg(short, long)]
         token: Option<String>,
     },
     /// List all accounts
     List,
+    /// Remove an account
+    Remove {
+        /// Account ID or Name
+        #[arg(short, long)]
+        id: Option<String>,
+
+        /// Account ID or Name (positional)
+        name_or_id: Option<String>,
+
+        /// Force removal without confirmation
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Update an account
+    Update {
+        /// Account ID or Name
+        #[arg(short, long)]
+        id: Option<String>,
+
+        /// Account ID or Name (positional)
+        name_or_id: Option<String>,
+
+        /// New name (optional)
+        #[arg(short, long)]
+        name: Option<String>,
+
+        /// New token/credential (optional)
+        #[arg(short, long)]
+        token: Option<String>,
+    },
+    /// Check account status
+    Status {
+        /// Account ID or Name
+        #[arg(short, long)]
+        id: Option<String>,
+
+        /// Account ID or Name (positional)
+        name_or_id: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
 pub enum TaskCmd {
     /// Create a new sync task
     Create {
-        #[arg(short, long)]
-        name: String,
+        /// Task Name (positional)
+        name_or_id: Option<String>,
 
         #[arg(short, long)]
-        source: String,
+        name: Option<String>,
 
         #[arg(short, long)]
-        target: String,
+        source: Option<String>,
 
-        #[arg(short = 's', long)]
+        #[arg(short, long)]
+        target: Option<String>,
+
+        #[arg(long)] // Removed short alias 's' to avoid conflict
         schedule: Option<String>,
 
         #[arg(short, long)]
@@ -138,8 +183,139 @@ mod tests {
         let cli = Cli::parse_from(&args);
         match cli.command {
             Commands::Account(AccountCmd::Create { name, provider, .. }) => {
-                assert_eq!(name, "ali");
-                assert_eq!(provider, "aliyun");
+                assert_eq!(name, Some("ali".to_string()));
+                assert_eq!(provider, Some("aliyun".to_string()));
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_account_create_positional() {
+        let args = [
+            "cloud-disk-sync",
+            "account",
+            "create",
+            "ali",
+        ];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Account(AccountCmd::Create { name_or_id, name, provider, .. }) => {
+                assert_eq!(name_or_id, Some("ali".to_string()));
+                assert_eq!(name, None);
+                assert_eq!(provider, None);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_account_remove() {
+        let args = ["cloud-disk-sync", "account", "remove", "--id", "acc1"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Account(AccountCmd::Remove { id, name_or_id, force }) => {
+                assert_eq!(id, Some("acc1".to_string()));
+                assert_eq!(name_or_id, None);
+                assert_eq!(force, false);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_account_update() {
+        let args = ["cloud-disk-sync", "account", "update", "--id", "acc1", "--name", "new_name"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Account(AccountCmd::Update { id, name_or_id, name, token }) => {
+                assert_eq!(id, Some("acc1".to_string()));
+                assert_eq!(name_or_id, None);
+                assert_eq!(name, Some("new_name".to_string()));
+                assert_eq!(token, None);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_account_remove_positional() {
+        let args = ["cloud-disk-sync", "account", "remove", "my-webdav"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Account(AccountCmd::Remove { id, name_or_id, force }) => {
+                assert_eq!(id, None);
+                assert_eq!(name_or_id, Some("my-webdav".to_string()));
+                assert_eq!(force, false);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_account_remove_force() {
+        let args = ["cloud-disk-sync", "account", "remove", "my-webdav", "-f"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Account(AccountCmd::Remove { id, name_or_id, force }) => {
+                assert_eq!(id, None);
+                assert_eq!(name_or_id, Some("my-webdav".to_string()));
+                assert_eq!(force, true);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_account_update_positional() {
+        let args = ["cloud-disk-sync", "account", "update", "my-webdav", "--name", "new_name"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Account(AccountCmd::Update { id, name_or_id, name, token }) => {
+                assert_eq!(id, None);
+                assert_eq!(name_or_id, Some("my-webdav".to_string()));
+                assert_eq!(name, Some("new_name".to_string()));
+                assert_eq!(token, None);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_account_status_positional() {
+        let args = ["cloud-disk-sync", "account", "status", "my-webdav"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Account(AccountCmd::Status { id, name_or_id }) => {
+                assert_eq!(id, None);
+                assert_eq!(name_or_id, Some("my-webdav".to_string()));
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_task_create_positional() {
+        let args = ["cloud-disk-sync", "tasks", "create", "test-task"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Tasks(TaskCmd::Create { name_or_id, name, .. }) => {
+                assert_eq!(name_or_id, Some("test-task".to_string()));
+                assert_eq!(name, None);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_task_create_full() {
+        let args = ["cloud-disk-sync", "tasks", "create", "test-task", "--source", "acc1", "--target", "acc2"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Tasks(TaskCmd::Create { name_or_id, source, target, .. }) => {
+                assert_eq!(name_or_id, Some("test-task".to_string()));
+                assert_eq!(source, Some("acc1".to_string()));
+                assert_eq!(target, Some("acc2".to_string()));
             }
             _ => panic!("unexpected command"),
         }
