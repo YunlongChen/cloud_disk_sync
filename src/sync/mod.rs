@@ -1,5 +1,5 @@
-pub mod engine;
 pub mod diff;
+pub mod engine;
 
 pub struct VerificationResult {
     pub total_files: i32,

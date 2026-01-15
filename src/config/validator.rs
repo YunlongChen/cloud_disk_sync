@@ -18,9 +18,9 @@ impl ConfigValidator for ConfigValidatorImpl {
         match account.provider {
             ProviderType::AliYunDrive => {
                 if !account.credentials.contains_key("refresh_token") {
-                    return Err(ConfigError::MissingField(
-                        "refresh_token for AliYunDrive".into()
-                    ).into());
+                    return Err(
+                        ConfigError::MissingField("refresh_token for AliYunDrive".into()).into(),
+                    );
                 }
             }
             ProviderType::WebDAV => {
@@ -46,14 +46,15 @@ impl ConfigValidator for ConfigValidatorImpl {
         if let Some(rate_limit) = &account.rate_limit {
             if rate_limit.requests_per_minute == 0 {
                 return Err(ConfigError::Invalid(
-                    "Requests per minute must be greater than 0".into()
-                ).into());
+                    "Requests per minute must be greater than 0".into(),
+                )
+                .into());
             }
 
             if rate_limit.max_concurrent == 0 {
-                return Err(ConfigError::Invalid(
-                    "Max concurrent must be greater than 0".into()
-                ).into());
+                return Err(
+                    ConfigError::Invalid("Max concurrent must be greater than 0".into()).into(),
+                );
             }
         }
 
@@ -86,16 +87,19 @@ impl ConfigValidator for ConfigValidatorImpl {
                 crate::config::Schedule::Cron(expr) => {
                     // 验证cron表达式
                     if !is_valid_cron(expr) {
-                        return Err(ConfigError::Invalid(
-                            format!("Invalid cron expression: {}", expr)
-                        ).into());
+                        return Err(ConfigError::Invalid(format!(
+                            "Invalid cron expression: {}",
+                            expr
+                        ))
+                        .into());
                     }
                 }
                 crate::config::Schedule::Interval { seconds } => {
                     if *seconds == 0 {
                         return Err(ConfigError::Invalid(
-                            "Interval seconds must be greater than 0".into()
-                        ).into());
+                            "Interval seconds must be greater than 0".into(),
+                        )
+                        .into());
                     }
                 }
                 crate::config::Schedule::Manual => {}

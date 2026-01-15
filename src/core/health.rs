@@ -9,9 +9,7 @@ pub struct HealthCheckerImpl {
 }
 
 impl HealthCheckerImpl {
-    pub fn new(
-        providers: HashMap<String, Box<dyn crate::providers::StorageProvider>>
-    ) -> Self {
+    pub fn new(providers: HashMap<String, Box<dyn crate::providers::StorageProvider>>) -> Self {
         Self { providers }
     }
 }
@@ -22,7 +20,9 @@ struct TempStorageHealth {}
 #[async_trait]
 impl HealthChecker for HealthCheckerImpl {
     async fn check_provider_health(&self, provider_id: &str) -> Result<HealthStatus> {
-        let provider = self.providers.get(provider_id)
+        let provider = self
+            .providers
+            .get(provider_id)
             .ok_or_else(|| SyncError::Provider(ProviderError::NotFound(provider_id.into())))?;
 
         let start_time = Instant::now();
@@ -38,13 +38,11 @@ impl HealthChecker for HealthCheckerImpl {
                     last_check: chrono::Utc::now(),
                 })
             }
-            Err(e) => {
-                Ok(HealthStatus::Unhealthy {
-                    provider_id: provider_id.into(),
-                    error: e.to_string(),
-                    last_check: chrono::Utc::now(),
-                })
-            }
+            Err(e) => Ok(HealthStatus::Unhealthy {
+                provider_id: provider_id.into(),
+                error: e.to_string(),
+                last_check: chrono::Utc::now(),
+            }),
         }
     }
 
@@ -67,8 +65,11 @@ impl HealthChecker for HealthCheckerImpl {
             health.local_storage.available_space = avail;
             health.local_storage.total_space = total;
             let used = total.saturating_sub(avail);
-            health.local_storage.usage_percentage =
-                if total > 0 { (used as f64 / total as f64) * 100.0 } else { 0.0 };
+            health.local_storage.usage_percentage = if total > 0 {
+                (used as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            };
 
             if health.local_storage.usage_percentage > 90.0 {
                 health.overall = HealthStatus::Degraded {

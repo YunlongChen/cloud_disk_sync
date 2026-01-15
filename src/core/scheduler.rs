@@ -1,8 +1,8 @@
 use crate::config::{Schedule, SyncTask};
 use crate::error::{Result, SyncError};
-use crate::utils::format_bytes;
 use crate::report::SyncReport;
 use crate::sync::engine::SyncEngine;
+use crate::utils::format_bytes;
 use chrono::{DateTime, TimeZone, Utc};
 use futures::FutureExt;
 // src/scheduler/mod.rs
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::error;
 use uuid::Uuid;
@@ -76,8 +76,10 @@ impl ScheduledTask {
             timeout_seconds: 3600, // 默认1小时超时
             priority: 50,
             tags: vec![],
-            description: format!("同步任务: {} -> {}",
-                                 sync_task.source_account, sync_task.target_account),
+            description: format!(
+                "同步任务: {} -> {}",
+                sync_task.source_account, sync_task.target_account
+            ),
             created_at: now,
             updated_at: now,
         }
@@ -92,9 +94,7 @@ impl ScheduledTask {
 
                 schedule.upcoming(Utc).next()
             }
-            Schedule::Interval { seconds } => {
-                Some(Utc::now() + Duration::from_secs(*seconds))
-            }
+            Schedule::Interval { seconds } => Some(Utc::now() + Duration::from_secs(*seconds)),
             Schedule::Manual => None,
         };
 
@@ -112,8 +112,7 @@ impl ScheduledTask {
         if self.run_count == 1 {
             self.average_duration_ms = duration_ms;
         } else {
-            self.average_duration_ms =
-                (self.average_duration_ms * 9 + duration_ms) / 10;
+            self.average_duration_ms = (self.average_duration_ms * 9 + duration_ms) / 10;
         }
 
         self.last_result = Some(TaskResult {
@@ -132,9 +131,7 @@ impl ScheduledTask {
 
     /// 检查是否应该立即执行（用于手动触发）
     pub fn should_run_now(&self) -> bool {
-        self.enabled &&
-            (self.next_run.is_none() ||
-                self.next_run.unwrap() <= Utc::now())
+        self.enabled && (self.next_run.is_none() || self.next_run.unwrap() <= Utc::now())
     }
 
     /// 获取任务状态
@@ -166,8 +163,9 @@ impl ScheduledTask {
             }
 
             // 检查是否超时（平均时间的2倍）
-            if self.average_duration_ms > 0 &&
-                last_result.duration_ms > self.average_duration_ms * 2 {
+            if self.average_duration_ms > 0
+                && last_result.duration_ms > self.average_duration_ms * 2
+            {
                 return TaskHealth::Degraded;
             }
         }
@@ -315,25 +313,22 @@ impl SchedulerManager {
         let running_tasks = self.running_tasks.clone();
 
         let job = match &scheduled_task.schedule {
-            Schedule::Cron(cron_expr) => {
-                Job::new_async(cron_expr, move |_uuid, _l| {
-                    let sync_engine = sync_engine.clone();
-                    let task_id = task_id.clone();
-                    let sync_task_id = sync_task_id.clone();
-                    let running_tasks = running_tasks.clone();
+            Schedule::Cron(cron_expr) => Job::new_async(cron_expr, move |_uuid, _l| {
+                let sync_engine = sync_engine.clone();
+                let task_id = task_id.clone();
+                let sync_task_id = sync_task_id.clone();
+                let running_tasks = running_tasks.clone();
 
-                    Box::pin(async move {
-                        if let Err(e) = Self::execute_task(
-                            &sync_engine,
-                            &task_id,
-                            &sync_task_id,
-                            &running_tasks,
-                        ).await {
-                            log::error!("任务执行失败 {}: {}", task_id, e);
-                        }
-                    })
-                }).unwrap()
-            }
+                Box::pin(async move {
+                    if let Err(e) =
+                        Self::execute_task(&sync_engine, &task_id, &sync_task_id, &running_tasks)
+                            .await
+                    {
+                        log::error!("任务执行失败 {}: {}", task_id, e);
+                    }
+                })
+            })
+            .unwrap(),
             Schedule::Interval { seconds } => {
                 Job::new_repeated_async(Duration::from_secs(*seconds), move |_uuid, _l| {
                     let sync_engine = sync_engine.clone();
@@ -347,18 +342,24 @@ impl SchedulerManager {
                             &task_id,
                             &sync_task_id,
                             &running_tasks,
-                        ).await {
+                        )
+                        .await
+                        {
                             log::error!("任务执行失败 {}: {}", task_id, e);
                         }
                     })
-                }).map_err(|e| SyncError::Unknown(e.to_string()))?
+                })
+                .map_err(|e| SyncError::Unknown(e.to_string()))?
             }
             Schedule::Manual => {
                 // 手动任务不调度
                 return Ok(());
             }
         };
-        self.scheduler.add(job).await.map_err(|e| SyncError::Unknown("".into()))?;
+        self.scheduler
+            .add(job)
+            .await
+            .map_err(|e| SyncError::Unknown("".into()))?;
         Ok(())
     }
 
@@ -395,7 +396,9 @@ impl SchedulerManager {
             // let task = config_manager.get_task(sync_task_id)?;
             // sync_engine.sync(&task).await
             Ok::<SyncReport, SyncError>(SyncReport::new())
-        }).catch_unwind().await;
+        })
+        .catch_unwind()
+        .await;
 
         let duration = Utc::now() - start_time;
         let success = match result {
@@ -468,7 +471,9 @@ impl SchedulerManager {
         let running_tasks = self.running_tasks.clone();
 
         // 获取任务信息
-        let scheduled_task = self.get_task(task_id).await
+        let scheduled_task = self
+            .get_task(task_id)
+            .await
             .ok_or_else(|| SyncError::Validation(format!("任务不存在: {}", task_id)))?;
 
         if !scheduled_task.enabled {
@@ -487,7 +492,9 @@ impl SchedulerManager {
                 &scheduled_id,
                 &scheduled_sync_id,
                 &running_tasks,
-            ).await {
+            )
+            .await
+            {
                 log::error!("手动触发任务执行失败: {}: {}", task_id_cloned, e);
             }
         });
@@ -598,17 +605,12 @@ impl SchedulerManager {
         let tasks = self.tasks.read().await;
 
         match format {
-            ExportFormat::Json => {
-                serde_json::to_string_pretty(&*tasks)
-                    .map_err(|e| SyncError::Validation(e.to_string()))
-            }
+            ExportFormat::Json => serde_json::to_string_pretty(&*tasks)
+                .map_err(|e| SyncError::Validation(e.to_string())),
             ExportFormat::Yaml => {
-                serde_yaml::to_string(&*tasks)
-                    .map_err(|e| SyncError::Validation(e.to_string()))
+                serde_yaml::to_string(&*tasks).map_err(|e| SyncError::Validation(e.to_string()))
             }
-            ExportFormat::Csv => {
-                Self::tasks_to_csv(&tasks)
-            }
+            ExportFormat::Csv => Self::tasks_to_csv(&tasks),
         }
     }
 
@@ -616,12 +618,10 @@ impl SchedulerManager {
     pub async fn import_tasks(&self, data: &str, format: ExportFormat) -> Result<usize> {
         let tasks: Vec<ScheduledTask> = match format {
             ExportFormat::Json => {
-                serde_json::from_str(data)
-                    .map_err(|e| SyncError::Validation(e.to_string()))?
+                serde_json::from_str(data).map_err(|e| SyncError::Validation(e.to_string()))?
             }
             ExportFormat::Yaml => {
-                serde_yaml::from_str(data)
-                    .map_err(|e| SyncError::Validation(e.to_string()))?
+                serde_yaml::from_str(data).map_err(|e| SyncError::Validation(e.to_string()))?
             }
             ExportFormat::Csv => {
                 return Err(SyncError::Unsupported("CSV导入暂不支持".into()));
@@ -656,7 +656,8 @@ impl SchedulerManager {
                 run_count: task.run_count,
                 priority: task.priority,
                 tags: task.tags.join(","),
-            }).unwrap();
+            })
+            .unwrap();
         }
 
         let data = String::from_utf8(wtr.into_inner().unwrap())
@@ -739,8 +740,9 @@ impl SchedulerStats {
         let warning_weight = self.warning_tasks as f64 * 0.4;
         let critical_weight = self.critical_tasks as f64 * 0.1;
 
-        (healthy_weight + degraded_weight + warning_weight + critical_weight) /
-            self.total_tasks as f64 * 100.0
+        (healthy_weight + degraded_weight + warning_weight + critical_weight)
+            / self.total_tasks as f64
+            * 100.0
     }
 }
 
@@ -860,10 +862,7 @@ impl TaskNotifier {
             "timestamp": Utc::now().to_rfc3339(),
         });
 
-        client.post(url)
-            .json(&payload)
-            .send()
-            .await?;
+        client.post(url).json(&payload).send().await?;
 
         Ok(())
     }
@@ -889,7 +888,9 @@ pub async fn cmd_schedule_task(
     println!("⏰ 为任务配置计划执行: {}", task_id);
 
     // 获取同步任务
-    let sync_task = config_manager.get_task(task_id).ok_or_else(|| SyncError::Validation(format!("任务不存在: {}", task_id)))?;
+    let sync_task = config_manager
+        .get_task(task_id)
+        .ok_or_else(|| SyncError::Validation(format!("任务不存在: {}", task_id)))?;
 
     // 解析调度配置
     let schedule = if schedule_str == "manual" {
@@ -897,7 +898,9 @@ pub async fn cmd_schedule_task(
     } else if let Ok(seconds) = schedule_str.parse::<u64>() {
         Schedule::Interval { seconds }
     } else if schedule_str.starts_with("interval:") {
-        let seconds = schedule_str.trim_start_matches("interval:").parse::<u64>()
+        let seconds = schedule_str
+            .trim_start_matches("interval:")
+            .parse::<u64>()
             .map_err(|e| SyncError::Validation(e.to_string()))?;
         Schedule::Interval { seconds }
     } else {
@@ -916,10 +919,8 @@ pub async fn cmd_schedule_task(
     Ok(())
 }
 
-pub async fn cmd_list_scheduled_tasks(
-    scheduler: &SchedulerManager,
-) -> Result<()> {
-    use prettytable::{row, Table};
+pub async fn cmd_list_scheduled_tasks(scheduler: &SchedulerManager) -> Result<()> {
+    use prettytable::{Table, row};
 
     println!("📋 计划任务列表:");
 

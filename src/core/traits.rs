@@ -177,9 +177,15 @@ pub struct FileMetadata {
 #[derive(Debug, Clone)]
 pub enum FileChange {
     Added(FileMetadata),
-    Modified { old: FileMetadata, new: FileMetadata },
+    Modified {
+        old: FileMetadata,
+        new: FileMetadata,
+    },
     Deleted(FileMetadata),
-    Moved { from: FileMetadata, to: FileMetadata },
+    Moved {
+        from: FileMetadata,
+        to: FileMetadata,
+    },
     Unchanged(FileMetadata),
 }
 
@@ -206,4 +212,3 @@ pub struct ProgressUpdate {
     pub elapsed: Duration,
     pub estimated_remaining: Duration,
 }
-

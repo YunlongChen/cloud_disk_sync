@@ -28,7 +28,8 @@ impl EncryptionManager {
     }
 
     fn get_key(&self, key_id: &str) -> Result<Vec<u8>, EncryptionError> {
-        self.key_store.get(key_id)
+        self.key_store
+            .get(key_id)
             .cloned()
             .ok_or_else(|| EncryptionError::KeyNotFound(key_id.to_string()))
     }
@@ -55,23 +56,28 @@ impl EncryptionManager {
         let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
 
         // 读取文件
-        let data = tokio::fs::read(path).await
+        let data = tokio::fs::read(path)
+            .await
             .map_err(|e| EncryptionError::InvalidData)?;
 
         // 加密数据
-        let ciphertext = cipher.encrypt(nonce, data.as_ref())
+        let ciphertext = cipher
+            .encrypt(nonce, data.as_ref())
             .map_err(|e| EncryptionError::EncryptionFailed(e.to_string()))?;
 
         // 创建临时加密文件
         let temp_path = self.create_temp_path()?;
-        let mut file = tokio::fs::File::create(&temp_path).await
+        let mut file = tokio::fs::File::create(&temp_path)
+            .await
             .map_err(|_| EncryptionError::InvalidData)?;
 
         // 写入nonce和密文
         use tokio::io::AsyncWriteExt;
-        file.write_all(&nonce_bytes).await
+        file.write_all(&nonce_bytes)
+            .await
             .map_err(|_| EncryptionError::InvalidData)?;
-        file.write_all(&ciphertext).await
+        file.write_all(&ciphertext)
+            .await
             .map_err(|_| EncryptionError::InvalidData)?;
 
         let metadata = EncryptionMetadata {
@@ -93,7 +99,8 @@ impl EncryptionManager {
         let cipher = Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(&key));
 
         // 读取加密文件
-        let data = tokio::fs::read(encrypted_path).await
+        let data = tokio::fs::read(encrypted_path)
+            .await
             .map_err(|_| EncryptionError::InvalidData)?;
 
         if data.len() < 12 {
@@ -104,7 +111,8 @@ impl EncryptionManager {
         let nonce = aes_gcm::Nonce::from_slice(nonce_bytes);
 
         // 解密数据
-        let plaintext = cipher.decrypt(nonce, ciphertext)
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext)
             .map_err(|e| EncryptionError::DecryptionFailed(e.to_string()))?;
 
         // 验证HMAC
@@ -114,7 +122,8 @@ impl EncryptionManager {
 
         // 写入解密文件
         let temp_path = self.create_temp_path()?;
-        tokio::fs::write(&temp_path, &plaintext).await
+        tokio::fs::write(&temp_path, &plaintext)
+            .await
             .map_err(|_| EncryptionError::InvalidData)?;
 
         Ok(temp_path)

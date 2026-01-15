@@ -1,10 +1,10 @@
 // src/sync/diff.rs
 use crate::error::{Result, SyncError};
+use crate::utils::format_bytes;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use crate::utils::format_bytes;
 
 /// 文件差异操作类型
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -142,11 +142,19 @@ impl FileDiff {
         }
     }
 
-    pub fn upload(path: String, source_info: FileMetadata, target_info: Option<FileMetadata>) -> Self {
+    pub fn upload(
+        path: String,
+        source_info: FileMetadata,
+        target_info: Option<FileMetadata>,
+    ) -> Self {
         Self::new(path, DiffAction::Upload, Some(source_info), target_info)
     }
 
-    pub fn download(path: String, target_info: FileMetadata, source_info: Option<FileMetadata>) -> Self {
+    pub fn download(
+        path: String,
+        target_info: FileMetadata,
+        source_info: Option<FileMetadata>,
+    ) -> Self {
         Self::new(path, DiffAction::Download, source_info, Some(target_info))
     }
 
@@ -155,26 +163,49 @@ impl FileDiff {
     }
 
     pub fn conflict(path: String, source_info: FileMetadata, target_info: FileMetadata) -> Self {
-        let mut diff = Self::new(path, DiffAction::Conflict, Some(source_info), Some(target_info));
+        let mut diff = Self::new(
+            path,
+            DiffAction::Conflict,
+            Some(source_info),
+            Some(target_info),
+        );
         diff.priority = 100; // 冲突文件最高优先级
         diff
     }
 
     pub fn update(path: String, source_info: FileMetadata, target_info: FileMetadata) -> Self {
-        Self::new(path, DiffAction::Update, Some(source_info), Some(target_info))
+        Self::new(
+            path,
+            DiffAction::Update,
+            Some(source_info),
+            Some(target_info),
+        )
     }
 
     pub fn unchanged(path: String, source_info: FileMetadata, target_info: FileMetadata) -> Self {
-        Self::new(path, DiffAction::Unchanged, Some(source_info), Some(target_info))
+        Self::new(
+            path,
+            DiffAction::Unchanged,
+            Some(source_info),
+            Some(target_info),
+        )
     }
 
-    pub fn move_file(from: String, to: String, source_info: FileMetadata, target_info: FileMetadata) -> Self {
+    pub fn move_file(
+        from: String,
+        to: String,
+        source_info: FileMetadata,
+        target_info: FileMetadata,
+    ) -> Self {
         let mut diff = Self::new(to, DiffAction::Move, Some(source_info), Some(target_info));
         diff.change_details.old_path = Some(from);
         diff
     }
 
-    fn calculate_size_diff(source_info: &Option<FileMetadata>, target_info: &Option<FileMetadata>) -> i64 {
+    fn calculate_size_diff(
+        source_info: &Option<FileMetadata>,
+        target_info: &Option<FileMetadata>,
+    ) -> i64 {
         match (source_info, target_info) {
             (Some(src), Some(dst)) => src.size as i64 - dst.size as i64,
             (Some(src), None) => src.size as i64,
@@ -318,7 +349,8 @@ impl FileDiff {
     }
 
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(self).map_err(|e| crate::error::SyncError::Serialization(e.into()))
+        serde_json::to_string_pretty(self)
+            .map_err(|e| crate::error::SyncError::Serialization(e.into()))
     }
 
     pub fn from_json(json: &str) -> Result<Self> {
@@ -326,8 +358,13 @@ impl FileDiff {
     }
 
     pub fn is_encrypted(&self) -> bool {
-        self.source_info.as_ref().map_or(false, |info| info.is_encrypted) ||
-            self.target_info.as_ref().map_or(false, |info| info.is_encrypted)
+        self.source_info
+            .as_ref()
+            .map_or(false, |info| info.is_encrypted)
+            || self
+                .target_info
+                .as_ref()
+                .map_or(false, |info| info.is_encrypted)
     }
 
     pub fn requires_decryption(&self) -> bool {
@@ -665,11 +702,17 @@ impl DiffResult {
     }
 
     pub fn filter_by_action(&self, action: DiffAction) -> Vec<&FileDiff> {
-        self.files.iter().filter(|diff| diff.action == action).collect()
+        self.files
+            .iter()
+            .filter(|diff| diff.action == action)
+            .collect()
     }
 
     pub fn filter_by_tag(&self, tag: &str) -> Vec<&FileDiff> {
-        self.files.iter().filter(|diff| diff.tags.contains(&tag.to_string())).collect()
+        self.files
+            .iter()
+            .filter(|diff| diff.tags.contains(&tag.to_string()))
+            .collect()
     }
 
     pub fn find_by_path(&self, path: &str) -> Option<&FileDiff> {
@@ -696,7 +739,8 @@ impl DiffResult {
     }
 
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(self).map_err(|e| crate::error::SyncError::Serialization(e.into()))
+        serde_json::to_string_pretty(self)
+            .map_err(|e| crate::error::SyncError::Serialization(e.into()))
     }
 
     pub fn to_csv(&self) -> Result<String> {
@@ -713,11 +757,15 @@ impl DiffResult {
                 requires_encryption: diff.requires_encryption,
                 requires_chunking: diff.requires_chunking,
                 tags: diff.tags.join(","),
-            }).map_err(|e| SyncError::Unsupported("转换异常".into()))?;
+            })
+            .map_err(|e| SyncError::Unsupported("转换异常".into()))?;
         }
 
-        let data = String::from_utf8(wtr.into_inner().map_err(|e| SyncError::Unsupported("转换异常".into()))?)
-            .map_err(|e| SyncError::Validation(e.to_string()))?;
+        let data = String::from_utf8(
+            wtr.into_inner()
+                .map_err(|e| SyncError::Unsupported("转换异常".into()))?,
+        )
+        .map_err(|e| SyncError::Validation(e.to_string()))?;
 
         Ok(data)
     }
@@ -873,7 +921,9 @@ impl DiffDetector {
         result.source_stats.finalize();
         result.target_stats.finalize();
         result.calculation_time_ms = start_time.elapsed().as_millis() as u64;
-        result.estimated_duration_ms = result.files.iter()
+        result.estimated_duration_ms = result
+            .files
+            .iter()
             .filter(|diff| diff.action.is_transfer())
             .map(|diff| diff.estimated_duration_ms)
             .sum();
@@ -978,12 +1028,7 @@ impl DiffDetector {
                 result.files[upload_idx].source_info.clone(),
                 result.files[delete_idx].target_info.clone(),
             ) {
-                let move_diff = FileDiff::move_file(
-                    delete_path,
-                    upload_path,
-                    source,
-                    target,
-                );
+                let move_diff = FileDiff::move_file(delete_path, upload_path, source, target);
 
                 // 替换原来的差异
                 result.files[delete_idx] = move_diff.clone();
@@ -993,18 +1038,27 @@ impl DiffDetector {
     }
 
     fn detect_conflicts(&self, result: &mut DiffResult) {
-        let mut path_map: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
+        let mut path_map: std::collections::HashMap<String, Vec<usize>> =
+            std::collections::HashMap::new();
         for (idx, diff) in result.files.iter().enumerate() {
             path_map.entry(diff.path.clone()).or_default().push(idx);
         }
         for indices in path_map.values() {
             if indices.len() > 1 {
-                let has_upload = indices.iter().any(|&i| result.files[i].action == DiffAction::Upload);
-                let has_delete = indices.iter().any(|&i| result.files[i].action == DiffAction::Delete);
-                let has_update = indices.iter().any(|&i| result.files[i].action == DiffAction::Update);
+                let has_upload = indices
+                    .iter()
+                    .any(|&i| result.files[i].action == DiffAction::Upload);
+                let has_delete = indices
+                    .iter()
+                    .any(|&i| result.files[i].action == DiffAction::Delete);
+                let has_update = indices
+                    .iter()
+                    .any(|&i| result.files[i].action == DiffAction::Update);
                 if (has_upload && has_delete) || (has_upload && has_update) {
                     for &i in indices {
-                        if let (Some(source), Some(target)) = (&result.files[i].source_info, &result.files[i].target_info) {
+                        if let (Some(source), Some(target)) =
+                            (&result.files[i].source_info, &result.files[i].target_info)
+                        {
                             result.files[i] = FileDiff::conflict(
                                 result.files[i].path.clone(),
                                 source.clone(),
@@ -1053,7 +1107,8 @@ impl DiffDetector {
 
     fn update_cache(&mut self, files: &[FileMetadata]) {
         for file in files {
-            self.cache.insert(file.path.to_string_lossy().to_string(), file.clone());
+            self.cache
+                .insert(file.path.to_string_lossy().to_string(), file.clone());
         }
     }
 }
@@ -1145,7 +1200,8 @@ fn detect_mime_type(extension: &std::ffi::OsStr) -> String {
         "cpp" | "cc" => "text/x-c++",
         "h" | "hpp" => "text/x-c++",
         _ => "application/octet-stream",
-    }.to_string()
+    }
+    .to_string()
 }
 
 #[cfg(test)]

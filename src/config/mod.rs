@@ -1,6 +1,6 @@
-mod validator;
-mod utils;
 mod migrator;
+mod utils;
+mod validator;
 
 use crate::encryption::types::{EncryptionAlgorithm, IvMode};
 use crate::error::ConfigError;
@@ -79,6 +79,8 @@ pub struct SyncTask {
     pub diff_mode: DiffMode,
     pub preserve_metadata: bool,
     pub verify_integrity: bool,
+    /// 同步策略（删除、覆盖、扫描限频等）
+    pub sync_policy: Option<SyncPolicy>,
 }
 
 impl SyncTask {
@@ -119,6 +121,17 @@ pub enum DiffMode {
     Smart,
 }
 
+/// 同步策略
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncPolicy {
+    /// 是否删除目标端的孤立文件（仅目标存在）
+    pub delete_orphans: bool,
+    /// 是否覆盖目标端已存在文件
+    pub overwrite_existing: bool,
+    /// 列目录扫描的冷却时间（秒），在冷却期内复用上次快照以降低风控风险
+    pub scan_cooldown_secs: u64,
+}
+
 pub struct ConfigManager {
     config_path: PathBuf,
     accounts: HashMap<String, AccountConfig>,
@@ -142,13 +155,23 @@ impl ConfigManager {
 
         let config_path = config_dir.join("config.yaml");
 
+        Self::new_with_path(config_path)
+    }
+
+    pub fn new_with_path(config_path: PathBuf) -> Result<Self, ConfigError> {
+        if let Some(parent) = config_path.parent() {
+            create_dir_all(parent).unwrap();
+        }
+
         let mut manager = Self {
             config_path,
             accounts: HashMap::new(),
             tasks: HashMap::new(),
         };
 
-        manager.load()?;
+        if manager.config_path.exists() {
+            manager.load()?;
+        }
         Ok(manager)
     }
 
@@ -156,10 +179,14 @@ impl ConfigManager {
         if self.config_path.exists() {
             let content = fs::read_to_string(&self.config_path).unwrap();
             let config: ConfigFile = serde_yaml::from_str(&content).unwrap();
-            self.accounts = config.accounts.into_iter()
+            self.accounts = config
+                .accounts
+                .into_iter()
                 .map(|a| (a.id.clone(), a))
                 .collect();
-            self.tasks = config.tasks.into_iter()
+            self.tasks = config
+                .tasks
+                .into_iter()
                 .map(|t| (t.id.clone(), t))
                 .collect();
         }
@@ -168,7 +195,7 @@ impl ConfigManager {
 
     pub fn save(&self) -> Result<(), ConfigError> {
         let config = ConfigFile {
-            version: "".to_string(),
+            version: "1.0.0".to_string(),
             global_settings: Default::default(),
             accounts: self.accounts.values().cloned().collect(),
             tasks: self.tasks.values().cloned().collect(),
@@ -182,6 +209,7 @@ impl ConfigManager {
         // 写入配置信息到文件！
         let content = serde_yaml::to_string(&config).unwrap();
         fs::write(&self.config_path, content).unwrap();
+        info!("Configuration saved to file: {:?}", self.config_path);
         Ok(())
     }
 }
@@ -202,6 +230,35 @@ impl ConfigManager {
 
     pub fn add_account(&mut self, account: AccountConfig) -> Result<(), ConfigError> {
         self.accounts.insert(account.id.clone(), account);
+        Ok(())
+    }
+
+    /// 更新账户
+    pub fn update_account(&mut self, account: AccountConfig) -> Result<(), ConfigError> {
+        self.accounts.insert(account.id.clone(), account);
+        Ok(())
+    }
+
+    /// 删除账户
+    pub fn remove_account(&mut self, account_id: &str) -> Result<(), ConfigError> {
+        self.accounts.remove(account_id);
+        Ok(())
+    }
+
+    /// 获取账户
+    pub fn get_account(&self, account_id: &str) -> Option<AccountConfig> {
+        self.accounts.get(account_id).cloned()
+    }
+
+    /// 更新任务
+    pub fn update_task(&mut self, task: SyncTask) -> Result<(), ConfigError> {
+        self.tasks.insert(task.id.clone(), task);
+        Ok(())
+    }
+
+    /// 删除任务
+    pub fn remove_task(&mut self, task_id: &str) -> Result<(), ConfigError> {
+        self.tasks.remove(task_id);
         Ok(())
     }
 }
@@ -257,11 +314,17 @@ pub struct EncryptionKey {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum KeyData {
     /// 本地存储的密钥（加密存储）
-    Local { encrypted_data: Vec<u8>, salt: Vec<u8> },
+    Local {
+        encrypted_data: Vec<u8>,
+        salt: Vec<u8>,
+    },
     /// 外部密钥管理服务
     External { service: String, key_uri: String },
     /// 硬件安全模块
-    HSM { module_id: String, key_handle: String },
+    HSM {
+        module_id: String,
+        key_handle: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

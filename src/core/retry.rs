@@ -49,8 +49,7 @@ impl RetryStrategy for ExponentialBackoffRetry {
     }
 
     fn delay_before_retry(&self, attempt: u32) -> Duration {
-        let delay = self.initial_delay.as_secs_f64() *
-            self.backoff_factor.powi(attempt as i32);
+        let delay = self.initial_delay.as_secs_f64() * self.backoff_factor.powi(attempt as i32);
 
         Duration::from_secs_f64(delay.min(self.max_delay.as_secs_f64()))
     }

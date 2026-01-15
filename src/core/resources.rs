@@ -1,8 +1,8 @@
 use crate::error::{Result, SyncError};
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -114,8 +114,8 @@ pub struct ResourceUsage {
     pub file_descriptors_limit: Option<usize>,
     pub file_descriptors_percentage: f64,
 
-    pub cpu_usage: f64, // 百分比
-    pub network_bandwidth_used: u64, // bytes/sec
+    pub cpu_usage: f64,                       // 百分比
+    pub network_bandwidth_used: u64,          // bytes/sec
     pub network_bandwidth_limit: Option<u64>, // bytes/sec
 
     pub active_tasks: usize,
@@ -253,7 +253,7 @@ pub struct ResourceLimits {
 impl ResourceLimits {
     pub fn default() -> Self {
         Self {
-            max_memory_bytes: Some(1024 * 1024 * 1024), // 1GB
+            max_memory_bytes: Some(1024 * 1024 * 1024),    // 1GB
             max_disk_bytes: Some(10 * 1024 * 1024 * 1024), // 10GB
             max_file_descriptors: Some(1024),
             max_cpu_percentage: Some(80.0),
@@ -267,24 +267,26 @@ impl ResourceLimits {
 
     pub fn validate(&self) -> Result<()> {
         if let Some(limit) = self.max_memory_bytes {
-            if limit < 1024 * 1024 { // 小于1MB
+            if limit < 1024 * 1024 {
+                // 小于1MB
                 return Err(SyncError::Validation(
-                    "Memory limit too low (minimum 1MB)".into()
+                    "Memory limit too low (minimum 1MB)".into(),
                 ));
             }
         }
 
         if let Some(limit) = self.max_disk_bytes {
-            if limit < 1024 * 1024 { // 小于1MB
+            if limit < 1024 * 1024 {
+                // 小于1MB
                 return Err(SyncError::Validation(
-                    "Disk limit too low (minimum 1MB)".into()
+                    "Disk limit too low (minimum 1MB)".into(),
                 ));
             }
         }
 
         if self.max_concurrent_tasks == 0 {
             return Err(SyncError::Validation(
-                "Max concurrent tasks must be greater than 0".into()
+                "Max concurrent tasks must be greater than 0".into(),
             ));
         }
 
@@ -325,9 +327,11 @@ impl ResourceManagerImpl {
         if let Some(max_memory) = limits.max_memory_bytes {
             let current = self.allocated_memory.load(Ordering::Relaxed);
             if current + size > max_memory {
-                return Err(SyncError::ResourceExhausted(
-                    format!("Memory limit exceeded: {} > {}", current + size, max_memory)
-                ));
+                return Err(SyncError::ResourceExhausted(format!(
+                    "Memory limit exceeded: {} > {}",
+                    current + size,
+                    max_memory
+                )));
             }
         }
 
@@ -354,9 +358,11 @@ impl ResourceManagerImpl {
         if let Some(max_disk) = limits.max_disk_bytes {
             let current = self.allocated_disk.load(Ordering::Relaxed);
             if current + size > max_disk {
-                return Err(SyncError::ResourceExhausted(
-                    format!("Disk limit exceeded: {} > {}", current + size, max_disk)
-                ));
+                return Err(SyncError::ResourceExhausted(format!(
+                    "Disk limit exceeded: {} > {}",
+                    current + size,
+                    max_disk
+                )));
             }
         }
 
@@ -371,9 +377,7 @@ impl ResourceManagerImpl {
         if size > 0 {
             // 预分配磁盘空间
             // 注意：这取决于操作系统和文件系统支持
-            let file = std::fs::OpenOptions::new()
-                .write(true)
-                .open(&temp_path)?;
+            let file = std::fs::OpenOptions::new().write(true).open(&temp_path)?;
             file.set_len(size)?;
         }
 
@@ -398,12 +402,14 @@ impl ResourceManagerImpl {
 
         if let Some(handle) = handles.remove(handle_id) {
             // 更新已分配内存
-            self.allocated_memory.fetch_sub(handle.size(), Ordering::SeqCst);
+            self.allocated_memory
+                .fetch_sub(handle.size(), Ordering::SeqCst);
             Ok(())
         } else {
-            Err(SyncError::Validation(
-                format!("Memory handle not found: {}", handle_id)
-            ))
+            Err(SyncError::Validation(format!(
+                "Memory handle not found: {}",
+                handle_id
+            )))
         }
     }
 
@@ -415,13 +421,15 @@ impl ResourceManagerImpl {
             handle.cleanup()?;
 
             // 更新已分配磁盘空间
-            self.allocated_disk.fetch_sub(handle.size(), Ordering::SeqCst);
+            self.allocated_disk
+                .fetch_sub(handle.size(), Ordering::SeqCst);
 
             Ok(())
         } else {
-            Err(SyncError::Validation(
-                format!("Disk handle not found: {}", handle_id)
-            ))
+            Err(SyncError::Validation(format!(
+                "Disk handle not found: {}",
+                handle_id
+            )))
         }
     }
 
@@ -464,10 +472,11 @@ impl ResourceManagerImpl {
 
         if current >= limits.max_concurrent_tasks {
             self.active_tasks.fetch_sub(1, Ordering::SeqCst);
-            return Err(SyncError::ResourceExhausted(
-                format!("Concurrent task limit exceeded: {} >= {}",
-                        current + 1, limits.max_concurrent_tasks)
-            ));
+            return Err(SyncError::ResourceExhausted(format!(
+                "Concurrent task limit exceeded: {} >= {}",
+                current + 1,
+                limits.max_concurrent_tasks
+            )));
         }
 
         Ok(())
@@ -483,14 +492,16 @@ impl ResourceManagerImpl {
         // 清理旧的内存句柄
         {
             let mut handles = self.memory_handles.lock();
-            let old_handles: Vec<String> = handles.iter()
+            let old_handles: Vec<String> = handles
+                .iter()
                 .filter(|(_, handle)| handle.age() > max_age)
                 .map(|(id, _)| id.clone())
                 .collect();
 
             for id in old_handles {
                 if let Some(handle) = handles.remove(&id) {
-                    self.allocated_memory.fetch_sub(handle.size(), Ordering::SeqCst);
+                    self.allocated_memory
+                        .fetch_sub(handle.size(), Ordering::SeqCst);
                 }
             }
         }
@@ -498,7 +509,8 @@ impl ResourceManagerImpl {
         // 清理旧的磁盘句柄
         {
             let mut handles = self.disk_handles.lock();
-            let old_handles: Vec<String> = handles.iter()
+            let old_handles: Vec<String> = handles
+                .iter()
                 .filter(|(_, handle)| handle.age() > max_age && handle.is_temporary())
                 .map(|(id, _)| id.clone())
                 .collect();
@@ -506,7 +518,8 @@ impl ResourceManagerImpl {
             for id in old_handles {
                 if let Some(handle) = handles.remove(&id) {
                     handle.cleanup()?;
-                    self.allocated_disk.fetch_sub(handle.size(), Ordering::SeqCst);
+                    self.allocated_disk
+                        .fetch_sub(handle.size(), Ordering::SeqCst);
                 }
             }
         }

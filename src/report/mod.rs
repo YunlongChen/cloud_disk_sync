@@ -1,6 +1,6 @@
 use crate::error::SyncError;
-use crate::utils::format_bytes;
 use crate::sync::diff::{DiffAction, FileDiff};
+use crate::utils::format_bytes;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -20,15 +20,24 @@ pub struct SyncReport {
 }
 
 impl SyncReport {
-    pub(crate) fn add_conflict(&self, _diff_path: &String) {
-        // 简化：统计冲突数量
+    pub(crate) fn add_conflict(&mut self, diff_path: &String) {
+        self.statistics.conflicts += 1;
+        self.statistics.total_files += 1;
+        let mut result = FileSyncResult::new(diff_path.clone(), FileOperation::Verify);
+        result.status = FileSyncStatus::Conflict;
+        self.files.push(result);
     }
 
-    pub(crate) fn add_success(&self, _diff_path: &String, diff_size: i64) {
-        // 简化：统计计数与传输字节
+    pub(crate) fn add_success(&mut self, diff_path: &String, diff_size: i64) {
+        let mut result = FileSyncResult::new(diff_path.clone(), FileOperation::Upload);
+        result.status = FileSyncStatus::Success;
+        result.size = diff_size.abs() as u64;
+        result.transferred_size = diff_size.abs() as u64;
+
+        self.statistics.add_file_result(&result);
+        self.files.push(result);
     }
 }
-
 
 impl SyncReport {
     pub fn new() -> SyncReport {
@@ -45,7 +54,8 @@ impl SyncReport {
         }
     }
     pub fn generate_html(&self) -> String {
-        format!(r#"
+        format!(
+            r#"
 <!DOCTYPE html>
 <html>
 <head>
@@ -106,14 +116,14 @@ impl SyncReport {
 </body>
 </html>
         "#,
-                self.task_id,
-                self.task_id,
-                self.statistics.files_synced,
-                self.statistics.transfer_rate / 1024.0 / 1024.0,
-                self.statistics.duration_seconds,
-                self.generate_file_rows(),
-                self.errors.len(),
-                self.generate_error_list()
+            self.task_id,
+            self.task_id,
+            self.statistics.files_synced,
+            self.statistics.transfer_rate / 1024.0 / 1024.0,
+            self.statistics.duration_seconds,
+            self.generate_file_rows(),
+            self.errors.len(),
+            self.generate_error_list()
         )
     }
 
@@ -148,9 +158,7 @@ impl SyncReport {
     }
 
     pub fn save(&self) {}
-
 }
-
 
 /// 同步状态枚举
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -209,9 +217,9 @@ impl SyncStatus {
     }
 
     pub fn is_completed(&self) -> bool {
-        matches!(self,
-            Self::Success | Self::PartialSuccess |
-            Self::Failed | Self::Cancelled
+        matches!(
+            self,
+            Self::Success | Self::PartialSuccess | Self::Failed | Self::Cancelled
         )
     }
 
@@ -224,7 +232,10 @@ impl SyncStatus {
     }
 
     pub fn is_active(&self) -> bool {
-        matches!(self, Self::Running | Self::Retrying | Self::Verifying | Self::Repairing)
+        matches!(
+            self,
+            Self::Running | Self::Retrying | Self::Verifying | Self::Repairing
+        )
     }
 }
 
@@ -323,9 +334,9 @@ impl FileSyncResult {
         if let Some(source_info) = &diff.source_info {
             result.source_hash = source_info.file_hash.clone();
             result.file_type = FileType::from_metadata(source_info);
-            result.modified_time = Some(DateTime::from_timestamp(
-                source_info.modified, 0,
-            ).unwrap_or_else(|| Utc::now()));
+            result.modified_time = Some(
+                DateTime::from_timestamp(source_info.modified, 0).unwrap_or_else(|| Utc::now()),
+            );
             result.permissions = Some(source_info.permissions);
         }
 
@@ -341,9 +352,10 @@ impl FileSyncResult {
 
     fn generate_operation_id(path: &str) -> String {
         use uuid::Uuid;
-        format!("op_{}_{}",
-                path.replace("/", "_").replace(".", "_"),
-                Uuid::new_v4().simple()
+        format!(
+            "op_{}_{}",
+            path.replace("/", "_").replace(".", "_"),
+            Uuid::new_v4().simple()
         )
     }
 
@@ -410,7 +422,8 @@ impl FileSyncResult {
     }
 
     pub fn duration(&self) -> Option<std::time::Duration> {
-        self.duration_ms.map(|ms| std::time::Duration::from_millis(ms))
+        self.duration_ms
+            .map(|ms| std::time::Duration::from_millis(ms))
     }
 
     pub fn human_readable_size(&self) -> String {
@@ -455,16 +468,26 @@ impl FileSyncResult {
 
     pub fn detailed_info(&self) -> String {
         let mut info = format!("文件: {}\n", self.path);
-        info.push_str(&format!("状态: {} {}\n", self.status.emoji(), self.status.as_str()));
+        info.push_str(&format!(
+            "状态: {} {}\n",
+            self.status.emoji(),
+            self.status.as_str()
+        ));
         info.push_str(&format!("操作: {}\n", self.operation.as_str()));
         info.push_str(&format!("大小: {}\n", self.human_readable_size()));
 
         if self.transferred_size > 0 {
-            info.push_str(&format!("传输大小: {}\n", self.human_readable_transferred()));
+            info.push_str(&format!(
+                "传输大小: {}\n",
+                self.human_readable_transferred()
+            ));
         }
 
         if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
-            info.push_str(&format!("开始时间: {}\n", start.format("%Y-%m-%d %H:%M:%S")));
+            info.push_str(&format!(
+                "开始时间: {}\n",
+                start.format("%Y-%m-%d %H:%M:%S")
+            ));
             info.push_str(&format!("结束时间: {}\n", end.format("%Y-%m-%d %H:%M:%S")));
         }
 
@@ -482,13 +505,17 @@ impl FileSyncResult {
         }
 
         if self.chunked {
-            info.push_str(&format!("分块传输: 是 ({}块)\n",
-                                   self.chunk_count.unwrap_or(0)));
+            info.push_str(&format!(
+                "分块传输: 是 ({}块)\n",
+                self.chunk_count.unwrap_or(0)
+            ));
         }
 
         if let Some(verified) = self.checksum_verified {
-            info.push_str(&format!("校验和验证: {}\n",
-                                   if verified { "通过" } else { "失败" }));
+            info.push_str(&format!(
+                "校验和验证: {}\n",
+                if verified { "通过" } else { "失败" }
+            ));
         }
 
         if self.retry_count > 0 {
@@ -580,10 +607,9 @@ impl FileSyncStatus {
     }
 
     pub fn is_completed(&self) -> bool {
-        matches!(self,
-            Self::Success | Self::Failed |
-            Self::Skipped | Self::Cancelled |
-            Self::Conflict
+        matches!(
+            self,
+            Self::Success | Self::Failed | Self::Skipped | Self::Cancelled | Self::Conflict
         )
     }
 
@@ -739,7 +765,9 @@ impl FileType {
             "exe" | "bin" | "app" | "sh" | "bat" | "cmd" => FileType::Executable,
             "json" | "yaml" | "yml" | "toml" | "ini" | "cfg" | "conf" => FileType::Config,
             "db" | "sqlite" | "mdb" | "accdb" => FileType::Database,
-            "rs" | "py" | "js" | "ts" | "java" | "cpp" | "c" | "h" | "go" | "php" | "rb" => FileType::Code,
+            "rs" | "py" | "js" | "ts" | "java" | "cpp" | "c" | "h" | "go" | "php" | "rb" => {
+                FileType::Code
+            }
             "ttf" | "otf" | "woff" | "woff2" => FileType::Font,
             "stl" | "obj" | "fbx" | "blend" => FileType::Model3D,
             _ => FileType::Unknown,
@@ -842,18 +870,28 @@ impl FileType {
     }
 
     pub fn is_compressible(&self) -> bool {
-        matches!(self,
-            Self::Text | Self::Code | Self::Document |
-            Self::Spreadsheet | Self::Presentation |
-            Self::Config | Self::Log
+        matches!(
+            self,
+            Self::Text
+                | Self::Code
+                | Self::Document
+                | Self::Spreadsheet
+                | Self::Presentation
+                | Self::Config
+                | Self::Log
         )
     }
 
     pub fn is_binary(&self) -> bool {
-        !matches!(self,
-            Self::Text | Self::Code | Self::Config |
-            Self::Document | Self::Spreadsheet |
-            Self::Presentation | Self::Log
+        !matches!(
+            self,
+            Self::Text
+                | Self::Code
+                | Self::Config
+                | Self::Document
+                | Self::Spreadsheet
+                | Self::Presentation
+                | Self::Log
         )
     }
 }
@@ -966,13 +1004,14 @@ impl SyncStatistics {
         }
 
         // 更新文件类型统计
-        let stats = self.file_type_stats.entry(result.file_type)
+        let stats = self
+            .file_type_stats
+            .entry(result.file_type)
             .or_insert_with(FileTypeStats::new);
         stats.add_file(result);
 
         // 更新操作类型统计
-        *self.operation_stats.entry(result.operation)
-            .or_insert(0) += 1;
+        *self.operation_stats.entry(result.operation).or_insert(0) += 1;
     }
 
     pub fn update_speed_metrics(&mut self, speed: f64) {
@@ -1069,24 +1108,53 @@ impl SyncStatistics {
 
         report.push_str(&format!("📊 同步统计详情\n"));
         report.push_str(&format!("文件总数: {}\n", self.total_files));
-        report.push_str(&format!("成功同步: {} ({:.1}%)\n", self.files_synced, self.success_rate()));
-        report.push_str(&format!("同步失败: {} ({:.1}%)\n", self.files_failed, self.failure_rate()));
-        report.push_str(&format!("跳过文件: {} ({:.1}%)\n", self.files_skipped, self.skip_rate()));
+        report.push_str(&format!(
+            "成功同步: {} ({:.1}%)\n",
+            self.files_synced,
+            self.success_rate()
+        ));
+        report.push_str(&format!(
+            "同步失败: {} ({:.1}%)\n",
+            self.files_failed,
+            self.failure_rate()
+        ));
+        report.push_str(&format!(
+            "跳过文件: {} ({:.1}%)\n",
+            self.files_skipped,
+            self.skip_rate()
+        ));
         report.push_str(&format!("冲突文件: {}\n", self.conflicts));
         report.push_str(&format!("重试次数: {}\n", self.total_retries));
-        report.push_str(&format!("总数据量: {}\n", self.human_readable_total_bytes()));
-        report.push_str(&format!("传输数据: {}\n", self.human_readable_transferred_bytes()));
-        report.push_str(&format!("平均文件大小: {:.1} KB\n", self.average_file_size() / 1024.0));
-        report.push_str(&format!("平均速度: {}\n", self.human_readable_average_speed()));
-        report.push_str(&format!("最大速度: {:.1} MB/s\n", self.max_speed / (1024.0 * 1024.0)));
+        report.push_str(&format!(
+            "总数据量: {}\n",
+            self.human_readable_total_bytes()
+        ));
+        report.push_str(&format!(
+            "传输数据: {}\n",
+            self.human_readable_transferred_bytes()
+        ));
+        report.push_str(&format!(
+            "平均文件大小: {:.1} KB\n",
+            self.average_file_size() / 1024.0
+        ));
+        report.push_str(&format!(
+            "平均速度: {}\n",
+            self.human_readable_average_speed()
+        ));
+        report.push_str(&format!(
+            "最大速度: {:.1} MB/s\n",
+            self.max_speed / (1024.0 * 1024.0)
+        ));
         report.push_str(&format!("最小速度: {:.1} KB/s\n", self.min_speed / 1024.0));
         report.push_str(&format!("总耗时: {:.1} 秒\n", self.duration_seconds));
         report.push_str(&format!("加密文件: {}\n", self.encrypted_files));
         report.push_str(&format!("分块传输: {}\n", self.chunked_files));
-        report.push_str(&format!("校验和验证: {}/{} ({:.1}% 成功率)\n",
-                                 self.verified_files,
-                                 self.verified_files + self.verification_failed,
-                                 self.verification_success_rate()));
+        report.push_str(&format!(
+            "校验和验证: {}/{} ({:.1}% 成功率)\n",
+            self.verified_files,
+            self.verified_files + self.verification_failed,
+            self.verification_success_rate()
+        ));
 
         report.push_str("\n📁 文件类型统计:\n");
         let mut file_types: Vec<_> = self.file_type_stats.iter().collect();
@@ -1098,12 +1166,14 @@ impl SyncStatistics {
             } else {
                 0.0
             };
-            report.push_str(&format!("  {} {}: {} ({:.1}%) - {}\n",
-                                     file_type.emoji(),
-                                     file_type.as_str(),
-                                     stats.count,
-                                     percentage,
-                                     format_bytes(stats.total_size)));
+            report.push_str(&format!(
+                "  {} {}: {} ({:.1}%) - {}\n",
+                file_type.emoji(),
+                file_type.as_str(),
+                stats.count,
+                percentage,
+                format_bytes(stats.total_size)
+            ));
         }
 
         report.push_str("\n🔄 操作类型统计:\n");
@@ -1116,11 +1186,13 @@ impl SyncStatistics {
             } else {
                 0.0
             };
-            report.push_str(&format!("  {} {}: {} ({:.1}%)\n",
-                                     operation.emoji(),
-                                     operation.as_str(),
-                                     count,
-                                     percentage));
+            report.push_str(&format!(
+                "  {} {}: {} ({:.1}%)\n",
+                operation.emoji(),
+                operation.as_str(),
+                count,
+                percentage
+            ));
         }
 
         report

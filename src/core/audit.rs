@@ -93,7 +93,9 @@ impl DatabaseAuditLogger {
             [],
         )?;
 
-        Ok(Self { connection: std::sync::Mutex::new(connection) })
+        Ok(Self {
+            connection: std::sync::Mutex::new(connection),
+        })
     }
 }
 

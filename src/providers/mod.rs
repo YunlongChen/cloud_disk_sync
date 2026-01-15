@@ -15,8 +15,13 @@ use std::time::Duration;
 #[async_trait]
 pub trait StorageProvider: Send + Sync {
     async fn list(&self, path: &str) -> Result<Vec<FileInfo>, SyncError>;
-    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<UploadResult, SyncError>;
-    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<DownloadResult, SyncError>;
+    async fn upload(&self, local_path: &Path, remote_path: &str)
+    -> Result<UploadResult, SyncError>;
+    async fn download(
+        &self,
+        remote_path: &str,
+        local_path: &Path,
+    ) -> Result<DownloadResult, SyncError>;
     async fn delete(&self, path: &str) -> Result<(), SyncError>;
     async fn mkdir(&self, path: &str) -> Result<(), SyncError>;
     async fn stat(&self, path: &str) -> Result<FileInfo, SyncError>;
@@ -59,11 +64,8 @@ impl<T: StorageProvider> RateLimitedProvider<T> {
             config.max_concurrent as u64,
             config.requests_per_minute as f64 / 60.0, // 转换为每秒请求数
         ));
-        
-        Self {
-            inner,
-            limiter,
-        }
+
+        Self { inner, limiter }
     }
 }
 
@@ -74,12 +76,20 @@ impl<T: StorageProvider> StorageProvider for RateLimitedProvider<T> {
         self.inner.list(path).await
     }
 
-    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<UploadResult, SyncError> {
+    async fn upload(
+        &self,
+        local_path: &Path,
+        remote_path: &str,
+    ) -> Result<UploadResult, SyncError> {
         self.limiter.acquire().await?;
         self.inner.upload(local_path, remote_path).await
     }
 
-    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<DownloadResult, SyncError> {
+    async fn download(
+        &self,
+        remote_path: &str,
+        local_path: &Path,
+    ) -> Result<DownloadResult, SyncError> {
         self.limiter.acquire().await?;
         self.inner.download(remote_path, local_path).await
     }

@@ -21,9 +21,11 @@ impl ConfigMigrator {
                 return Ok(());
             }
             _ => {
-                return Err(crate::error::ConfigError::Invalid(
-                    format!("Unsupported config version: {}", current_version)
-                ).into());
+                return Err(crate::error::ConfigError::Invalid(format!(
+                    "Unsupported config version: {}",
+                    current_version
+                ))
+                .into());
             }
         }
 
@@ -109,9 +111,11 @@ impl ConfigMigrator {
         let backup_path = backup_dir.join(backup_name);
 
         if !backup_path.exists() {
-            return Err(crate::error::ConfigError::Invalid(
-                format!("Backup not found: {}", backup_name)
-            ).into());
+            return Err(crate::error::ConfigError::Invalid(format!(
+                "Backup not found: {}",
+                backup_name
+            ))
+            .into());
         }
 
         // 备份当前配置

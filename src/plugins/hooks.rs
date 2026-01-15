@@ -28,25 +28,15 @@ pub enum PluginHook {
         priority: HookPriority,
     },
     /// 错误处理钩子
-    OnError {
-        priority: HookPriority,
-    },
+    OnError { priority: HookPriority },
     /// 文件过滤器钩子
-    FileFilter {
-        priority: HookPriority,
-    },
+    FileFilter { priority: HookPriority },
     /// 文件名转换钩子
-    FilenameTransform {
-        priority: HookPriority,
-    },
+    FilenameTransform { priority: HookPriority },
     /// 加密前钩子
-    PreEncryption {
-        priority: HookPriority,
-    },
+    PreEncryption { priority: HookPriority },
     /// 解密后钩子
-    PostDecryption {
-        priority: HookPriority,
-    },
+    PostDecryption { priority: HookPriority },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -159,7 +149,11 @@ impl HookContext {
 #[async_trait]
 pub trait HookHandler: Send + Sync {
     /// 处理钩子
-    async fn handle_hook(&self, hook: PluginHook, context: &mut HookContext) -> Result<(), SyncError>;
+    async fn handle_hook(
+        &self,
+        hook: PluginHook,
+        context: &mut HookContext,
+    ) -> Result<(), SyncError>;
 
     /// 钩子是否支持特定类型
     fn supports_hook(&self, hook: &PluginHook) -> bool;

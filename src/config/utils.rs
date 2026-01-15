@@ -101,7 +101,9 @@ impl ConfigUtils {
 
         // 从环境变量读取网络设置
         if let Ok(proxy) = std::env::var("DISKSYNC_PROXY") {
-            config.network_settings.get_or_insert_with(|| super::NetworkSettings::default())
+            config
+                .network_settings
+                .get_or_insert_with(|| super::NetworkSettings::default())
                 .proxy = Some(super::ProxyConfig {
                 url: proxy,
                 username: std::env::var("DISKSYNC_PROXY_USER").ok(),
@@ -259,10 +261,10 @@ impl ConfigDiff {
     }
 
     pub fn has_changes(&self) -> bool {
-        !self.accounts_added.is_empty() ||
-            !self.accounts_removed.is_empty() ||
-            !self.tasks_added.is_empty() ||
-            !self.tasks_removed.is_empty() ||
-            !self.settings_changed.is_empty()
+        !self.accounts_added.is_empty()
+            || !self.accounts_removed.is_empty()
+            || !self.tasks_added.is_empty()
+            || !self.tasks_removed.is_empty()
+            || !self.settings_changed.is_empty()
     }
 }

@@ -17,7 +17,7 @@ pub struct TokenBucketRateLimiter {
 
 #[cfg(test)]
 mod tests {
-    use super::{TokenBucketRateLimiter, SlidingWindowRateLimiter};
+    use super::{SlidingWindowRateLimiter, TokenBucketRateLimiter};
     use crate::core::traits::RateLimiter;
     use std::time::Duration;
 
@@ -79,12 +79,11 @@ impl RateLimiter for TokenBucketRateLimiter {
                 continue;
             }
 
-            if self.tokens.compare_exchange(
-                current,
-                current - 1,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .tokens
+                .compare_exchange(current, current - 1, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
                 break;
             }
         }
@@ -108,12 +107,9 @@ impl RateLimiter for TokenBucketRateLimiter {
             return false;
         }
 
-        self.tokens.compare_exchange(
-            current,
-            current - 1,
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        ).is_ok()
+        self.tokens
+            .compare_exchange(current, current - 1, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
     }
 }
 

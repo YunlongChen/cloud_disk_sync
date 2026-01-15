@@ -18,14 +18,18 @@ impl HookManager {
     }
 
     pub fn register_handler(&mut self, handler: Box<dyn HookHandler>) {
-        let handlers = self.handlers.entry("all".to_string()).or_insert_with(Vec::new);
+        let handlers = self
+            .handlers
+            .entry("all".to_string())
+            .or_insert_with(Vec::new);
         handlers.push(handler);
     }
 
     pub async fn execute_hook(&self, hook: PluginHook, context: &mut HookContext) -> Result<()> {
         if let Some(handlers) = self.handlers.get("all") {
             // 按优先级排序
-            let mut sorted_handlers: Vec<_> = handlers.iter()
+            let mut sorted_handlers: Vec<_> = handlers
+                .iter()
                 .map(|h| (h.get_priority(&hook), h.as_ref()))
                 .collect();
 
@@ -41,7 +45,9 @@ impl HookManager {
         Ok(())
     }
 
-    fn all_hook_types() -> Vec<&'static str> { vec!["all"] }
+    fn all_hook_types() -> Vec<&'static str> {
+        vec!["all"]
+    }
 }
 
 /// 基础插件实现示例

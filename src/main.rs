@@ -1,24 +1,31 @@
 mod cli;
 mod config;
+mod core;
 mod encryption;
+mod error;
+mod plugins;
 mod providers;
 mod report;
 mod sync;
-mod error;
-mod core;
-mod plugins;
 mod utils;
 
-use crate::cli::Cli;
-use crate::config::{AccountConfig, ConfigManager, ProviderType, RateLimitConfig, RetryPolicy, Schedule, SyncTask};
-use crate::sync::engine::SyncEngine;
-use crate::utils::format_bytes;
+use crate::{
+    cli::Cli,
+    config::{
+        AccountConfig, ConfigManager, ProviderType, RateLimitConfig, RetryPolicy, Schedule,
+        SyncTask,
+    },
+    encryption::types::{EncryptionAlgorithm, IvMode},
+    sync::engine::SyncEngine,
+    utils::format_bytes,
+};
 // 移除未解析的类型导入，直接使用方法返回推断类型
 use aes_gcm::aead::Aead;
 use clap::Parser;
 use cli::Commands;
-use rand::{thread_rng, Rng};
+use rand::{Rng, rng};
 use std::fs;
+use tracing::info;
 use tracing_subscriber;
 
 #[tokio::main]
@@ -37,25 +44,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             cmd_run_task(&config_manager, &task, dry_run, resume).await?;
         }
-        Commands::AddAccount {
-            name,
-            provider,
-            token,
-        } => {
-            cmd_add_account(&mut config_manager, name, provider, token).await?;
-        }
-        Commands::CreateTask {
-            name,
-            source,
-            target,
-            schedule,
-            encrypt,
-        } => {
-            cmd_create_task(&mut config_manager, name, source, target, schedule, encrypt).await?;
-        }
-        Commands::List => {
-            cmd_list_tasks(&config_manager)?;
-        }
+        Commands::Account(cmd) => match cmd {
+            cli::AccountCmd::Create {
+                name,
+                provider,
+                token,
+            } => {
+                cmd_add_account(&mut config_manager, name, provider, token).await?;
+            }
+            cli::AccountCmd::List => {
+                cmd_list_accounts(&config_manager)?;
+            }
+        },
+        Commands::Tasks(cmd) => match cmd {
+            cli::TaskCmd::Create {
+                name,
+                source,
+                target,
+                schedule,
+                encrypt,
+            } => {
+                cmd_create_task(&mut config_manager, name, source, target, schedule, encrypt)
+                    .await?;
+            }
+            cli::TaskCmd::List => {
+                cmd_list_tasks(&config_manager)?;
+            }
+        },
         Commands::Report { task, detailed } => {
             cmd_generate_report(&task, detailed)?;
         }
@@ -64,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::GenKey { name, strength } => {
             cmd_generate_key(&name, strength)?;
-        },
+        }
         Commands::Plugins => {
             println!("查看所有插件！")
         }
@@ -82,7 +97,9 @@ async fn cmd_verify_integrity(
     println!("🔍 验证数据完整性: {}", task_id);
 
     let config_manager = ConfigManager::new()?;
-    let task = config_manager.get_task(task_id).ok_or_else(|| format!("任务不存在: {}", task_id))?;
+    let task = config_manager
+        .get_task(task_id)
+        .ok_or_else(|| format!("任务不存在: {}", task_id))?;
 
     let engine = SyncEngine::new().await?;
 
@@ -90,17 +107,21 @@ async fn cmd_verify_integrity(
     let progress_bar = ProgressBar::new(0);
     progress_bar.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>7}/{len:7} {msg}")?
-            .progress_chars("#>-")
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>7}/{len:7} {msg}",
+            )?
+            .progress_chars("#>-"),
     );
     progress_bar.set_message("正在验证...");
 
     // 执行完整性验证
-    let verification_result = engine.verify_integrity(&task, verify_all, |progress| {
-        progress_bar.set_length(progress.total_files as u64);
-        progress_bar.set_position(progress.current_file as u64);
-        progress_bar.set_message(format!("正在验证: {}", progress.current_path));
-    }).await?;
+    let verification_result = engine
+        .verify_integrity(&task, verify_all, |progress| {
+            progress_bar.set_length(progress.total_files as u64);
+            progress_bar.set_position(progress.current_file as u64);
+            progress_bar.set_message(format!("正在验证: {}", progress.current_path));
+        })
+        .await?;
 
     progress_bar.finish_with_message("✅ 验证完成!");
 
@@ -133,7 +154,10 @@ async fn cmd_verify_integrity(
 
             println!("✅ 修复完成:");
             println!("  修复文件数: {}", repair_result.repaired_files);
-            println!("  修复数据量: {}", format_bytes(repair_result.repaired_bytes));
+            println!(
+                "  修复数据量: {}",
+                format_bytes(repair_result.repaired_bytes)
+            );
         }
     } else {
         println!("🎉 所有文件完整性验证通过!");
@@ -165,10 +189,9 @@ fn cmd_generate_key(
         }
     };
 
-
     // 生成随机密钥
     let mut key_bytes = vec![0u8; key_size];
-    thread_rng().fill(&mut key_bytes[..]);
+    rng().fill(&mut key_bytes[..]);
 
     // 创建密钥存储目录
     let keys_dir = dirs::data_dir()
@@ -209,7 +232,8 @@ fn cmd_generate_key(
     let cipher = aes_gcm::Aes256Gcm::new(&encryption_key.into());
     let nonce: [u8; 12] = rand::random();
 
-    let encrypted_key = cipher.encrypt(&nonce.into(), key_bytes.as_ref())
+    let encrypted_key = cipher
+        .encrypt(&nonce.into(), key_bytes.as_ref())
         .map_err(|e| format!("加密密钥失败: {}", e))?;
 
     // 保存加密的密钥文件
@@ -273,11 +297,10 @@ fn generate_recovery_code(key: &[u8]) -> String {
 
     // 转换为单词列表（便于记忆）
     let wordlist = vec![
-        "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel",
-        "india", "juliet", "kilo", "lima", "mike", "november", "oscar", "papa",
-        "quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey",
-        "xray", "yankee", "zulu", "zero", "one", "two", "three", "four", "five",
-        "six", "seven", "eight", "nine"
+        "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india",
+        "juliet", "kilo", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra",
+        "tango", "uniform", "victor", "whiskey", "xray", "yankee", "zulu", "zero", "one", "two",
+        "three", "four", "five", "six", "seven", "eight", "nine",
     ];
 
     let mut words = Vec::new();
@@ -290,10 +313,8 @@ fn generate_recovery_code(key: &[u8]) -> String {
     words[..8].join("-")
 }
 
-fn cmd_list_tasks(
-    config_manager: &ConfigManager,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use prettytable::{row, Table};
+fn cmd_list_tasks(config_manager: &ConfigManager) -> Result<(), Box<dyn std::error::Error>> {
+    use prettytable::{Table, row};
 
     println!("📋 同步任务列表:");
 
@@ -301,19 +322,12 @@ fn cmd_list_tasks(
 
     if tasks.is_empty() {
         println!("  暂无同步任务");
-        println!("💡 使用 `disksync create-task` 创建新任务");
+        println!("💡 使用 `cloud-disk-sync tasks create` 创建新任务");
         return Ok(());
     }
 
     let mut table = Table::new();
-    table.add_row(row![
-        "ID",
-        "名称",
-        "源",
-        "目标",
-        "计划",
-        "状态"
-    ]);
+    table.add_row(row!["ID", "名称", "源", "目标", "计划", "状态"]);
 
     for task in tasks.values() {
         let schedule_str = match &task.schedule {
@@ -335,7 +349,7 @@ fn cmd_list_tasks(
         let status = get_task_status(task);
 
         table.add_row(row![
-            &task.id[..8],  // 只显示前8个字符
+            &task.id[..8], // 只显示前8个字符
             &task.name,
             format!("{}:{}", task.source_account, task.source_path),
             format!("{}:{}", task.target_account, task.target_path),
@@ -346,16 +360,23 @@ fn cmd_list_tasks(
 
     table.printstd();
 
-    // 显示账户信息
-    println!("\n👤 账户列表:");
+    Ok(())
+}
+
+fn cmd_list_accounts(config_manager: &ConfigManager) -> Result<(), Box<dyn std::error::Error>> {
+    use prettytable::{Table, row};
+
+    println!("👤 账户列表:");
     let accounts = config_manager.get_accounts();
 
+    if accounts.is_empty() {
+        println!("  暂无账户");
+        println!("💡 使用 `cloud-disk-sync account create` 添加新账户");
+        return Ok(());
+    }
+
     let mut account_table = Table::new();
-    account_table.add_row(row![
-        "名称",
-        "类型",
-        "状态"
-    ]);
+    account_table.add_row(row!["名称", "类型", "状态"]);
 
     for account in accounts.values() {
         let status = "✅ 已配置";
@@ -385,9 +406,9 @@ async fn cmd_create_task(
     schedule_str: Option<String>,
     encrypt: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use dialoguer::{Input, Select};
-    use crate::config::{DiffMode, FilterRule, Schedule, SyncTask};
     use crate::config::EncryptionConfig;
+    use crate::config::{DiffMode, FilterRule, Schedule, SyncPolicy, SyncTask};
+    use dialoguer::{Input, Select};
 
     println!("🔄 创建新的同步任务...");
 
@@ -461,13 +482,7 @@ async fn cmd_create_task(
             Some(Schedule::Cron(schedule_str))
         }
     } else {
-        let schedule_options = vec![
-            "手动执行",
-            "每小时",
-            "每天",
-            "每周",
-            "自定义 Cron 表达式",
-        ];
+        let schedule_options = vec!["手动执行", "每小时", "每天", "每周", "自定义 Cron 表达式"];
 
         let selection = Select::new()
             .with_prompt("选择执行计划")
@@ -510,6 +525,11 @@ async fn cmd_create_task(
         diff_mode,
         preserve_metadata: true,
         verify_integrity: false,
+        sync_policy: Some(SyncPolicy {
+            delete_orphans: true,
+            overwrite_existing: true,
+            scan_cooldown_secs: 0,
+        }),
     };
 
     // 保存任务
@@ -518,7 +538,10 @@ async fn cmd_create_task(
 
     println!("✅ 任务创建成功!");
     println!("📋 任务ID: {}", task_id);
-    println!("💡 使用命令 `disksync run --task {}` 立即执行", task_id);
+    println!(
+        "💡 使用命令 `cloud-disk-sync run --task {}` 立即执行",
+        task_id
+    );
     Ok(())
 }
 
@@ -526,7 +549,11 @@ fn parse_account_path(path_str: &str) -> Result<(String, String), Box<dyn std::e
     // 格式: account_name:/path/to/folder
     let parts: Vec<&str> = path_str.splitn(2, ':').collect();
     if parts.len() != 2 {
-        return Err(format!("无效的路径格式，应为 account_name:/path/to/folder，实际: {}", path_str).into());
+        return Err(format!(
+            "无效的路径格式，应为 account_name:/path/to/folder，实际: {}",
+            path_str
+        )
+        .into());
     }
 
     let account = parts[0].trim().to_string();
@@ -590,9 +617,7 @@ async fn cmd_add_account(
                 .with_prompt("用户名")
                 .interact_text()?;
 
-            let password = Password::new()
-                .with_prompt("密码")
-                .interact()?;
+            let password = Password::new().with_prompt("密码").interact()?;
 
             credentials.insert("url".to_string(), url);
             credentials.insert("username".to_string(), username);
@@ -712,7 +737,7 @@ async fn cmd_add_account(
             config_manager.save()?;
 
             println!("📁 账户已保存，ID: {}", account_id);
-            println!("💡 使用命令 `disksync list` 查看所有账户");
+            println!("💡 使用命令 `cloud-disk-sync account list` 查看所有账户");
         }
         Err(e) => {
             eprintln!("❌ 账户验证失败: {}", e);
@@ -733,7 +758,9 @@ async fn cmd_add_account(
     Ok(())
 }
 
-async fn verify_account_connection(account: &AccountConfig) -> Result<(), Box<dyn std::error::Error>> {
+async fn verify_account_connection(
+    account: &AccountConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
     // 根据提供商类型创建客户端并测试连接
     match account.provider {
         ProviderType::AliYunDrive => verify_aliyun_account(account).await,
@@ -746,7 +773,9 @@ async fn verify_account_connection(account: &AccountConfig) -> Result<(), Box<dy
 async fn verify_aliyun_account(account: &AccountConfig) -> Result<(), Box<dyn std::error::Error>> {
     use reqwest::Client;
 
-    let refresh_token = account.credentials.get("refresh_token")
+    let refresh_token = account
+        .credentials
+        .get("refresh_token")
         .ok_or("缺少 refresh_token")?;
 
     let client = Client::new();
@@ -769,15 +798,14 @@ async fn verify_aliyun_account(account: &AccountConfig) -> Result<(), Box<dyn st
 }
 
 async fn verify_webdav_account(account: &AccountConfig) -> Result<(), Box<dyn std::error::Error>> {
-    use reqwest::Client;
     use base64::Engine;
+    use reqwest::Client;
 
-    let url = account.credentials.get("url")
-        .ok_or("缺少 URL")?;
-    let username = account.credentials.get("username")
-        .ok_or("缺少用户名")?;
-    let password = account.credentials.get("password")
-        .ok_or("缺少密码")?;
+    info!("正在验证 webdav 账户");
+
+    let url = account.credentials.get("url").ok_or("缺少 URL")?;
+    let username = account.credentials.get("username").ok_or("缺少用户名")?;
+    let password = account.credentials.get("password").ok_or("缺少密码")?;
 
     let client = Client::new();
 
@@ -789,7 +817,8 @@ async fn verify_webdav_account(account: &AccountConfig) -> Result<(), Box<dyn st
             "Authorization",
             format!(
                 "Basic {}",
-                base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", username, password))
+                base64::engine::general_purpose::STANDARD
+                    .encode(format!("{}:{}", username, password))
             ),
         )
         .send()
@@ -802,7 +831,6 @@ async fn verify_webdav_account(account: &AccountConfig) -> Result<(), Box<dyn st
     Ok(())
 }
 
-use crate::encryption::types::{EncryptionAlgorithm, IvMode};
 // use smb::{Client, ClientConfig, ReadAtChannel};
 
 // async fn verify_smb_account(account: &AccountConfig) -> Result<(), Box<dyn std::error::Error>> {
@@ -855,19 +883,23 @@ async fn cmd_run_task(
     } else {
         let progress_bar = indicatif::ProgressBar::new(100);
         let style = indicatif::ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>7}/{len:7} {msg}")
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>7}/{len:7} {msg}",
+            )
             .unwrap()
             .progress_chars("#>-");
         progress_bar.set_style(style);
 
-        let report = engine.sync_with_progress(&task, |progress| {
-            progress_bar.set_position(progress.percentage as u64);
-            progress_bar.set_message(format!(
-                "{}/{}",
-                format_bytes(progress.transferred),
-                format_bytes(progress.total)
-            ));
-        }).await?;
+        let report = engine
+            .sync_with_progress(&task, |progress| {
+                progress_bar.set_position(progress.percentage as u64);
+                progress_bar.set_message(format!(
+                    "{}/{}",
+                    format_bytes(progress.transferred),
+                    format_bytes(progress.total)
+                ));
+            })
+            .await?;
 
         progress_bar.finish_with_message("Sync completed!");
 
