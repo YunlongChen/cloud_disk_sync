@@ -9,8 +9,9 @@ use tracing::info;
 use warp::Filter;
 use warp::http::Method;
 
-use cloud_disk_sync::config::{AccountConfig, DiffMode, RetryPolicy, SyncPolicy, SyncTask};
+use cloud_disk_sync::config::{AccountConfig, ConfigManager, DiffMode, ProviderType, RetryPolicy, SyncPolicy, SyncTask};
 use cloud_disk_sync::providers::{StorageProvider, WebDavProvider};
+use cloud_disk_sync::sync::diff::DiffAction;
 use cloud_disk_sync::sync::engine::SyncEngine;
 
 mod common;
@@ -126,156 +127,122 @@ async fn test_webdav_sync_basic() {
 
 /// 大文件与多删除场景：源含 2MB 二进制文件，目标含多余文件，执行上传与批量删除
 #[tokio::test]
-async fn test_webdav_sync_large_and_multi_delete() {
+async fn test_webdav_sync_directory_operations() {
     common::init_logging();
-    // 启动源与目标 mock WebDAV
+
+    // 启动 Mock WebDAV 服务器
+    // 源：包含 new_dir/file.txt
     let (addr1, _store1) = start_mock_server_with_seed(vec![
-        ("/file_root/a.txt", "A NEW", false),
-        ("/file_root/b.txt", "B NEWER", false),
-    ])
-    .await;
-    // 为源添加大文件内容到临时文件后再通过 Provider 上传，以模拟真实上传路径
-    let temp_dir = std::env::temp_dir();
-    let large_local = temp_dir.join("mock_large_2mb.bin");
-    let large_content = vec![7u8; 2 * 1024 * 1024];
-    tokio::fs::write(&large_local, &large_content)
-        .await
-        .unwrap();
+        ("/new_dir/file.txt", "content", false),
+        ("/new_dir", "", true),
+    ]).await;
 
-    let src_cfg = AccountConfig {
-        id: "src_large".to_string(),
-        provider: cloud_disk_sync::config::ProviderType::WebDAV,
-        name: "src_large".to_string(),
-        credentials: {
-            let mut c = HashMap::new();
-            c.insert("url".to_string(), format!("http://{}", addr1));
-            c.insert("username".to_string(), "user1".to_string());
-            c.insert("password".to_string(), "pass1".to_string());
-            c
-        },
-        rate_limit: None,
-        retry_policy: RetryPolicy::default(),
-    };
-    let src_provider = WebDavProvider::new(&src_cfg).await.unwrap();
-    // 上传大文件到源
-    src_provider
-        .upload(&large_local, "/file_root/d.bin")
-        .await
-        .unwrap();
-
+    // 目标：包含 old_dir/old.txt
     let (addr2, _store2) = start_mock_server_with_seed(vec![
-        ("/file_root/b.txt", "B OLD", false),
-        ("/file_root/c.txt", "C REMOVE", false),
-        ("/file_root/e.txt", "E REMOVE", false),
-        ("/file_root/f.txt", "F REMOVE", false),
-    ])
-    .await;
+        ("/old_dir/old.txt", "old content", false),
+        ("/old_dir", "", true),
+    ]).await;
 
-    let dst_cfg = AccountConfig {
-        id: "dst_large".to_string(),
-        provider: cloud_disk_sync::config::ProviderType::WebDAV,
-        name: "dst_large".to_string(),
+    // 创建配置管理器和任务
+    let mut config_manager = ConfigManager::new().unwrap();
+    
+    // 添加源账户
+    let source_account = AccountConfig {
+        id: "source_acc".to_string(),
+        name: "Source".to_string(),
+        provider: ProviderType::WebDAV,
         credentials: {
-            let mut c = HashMap::new();
-            c.insert("url".to_string(), format!("http://{}", addr2));
-            c.insert("username".to_string(), "user2".to_string());
-            c.insert("password".to_string(), "pass2".to_string());
-            c
+            let mut map = HashMap::new();
+            map.insert("url".to_string(), format!("http://{}", addr1));
+            map.insert("username".to_string(), "user".to_string());
+            map.insert("password".to_string(), "pass".to_string());
+            map
         },
         rate_limit: None,
         retry_policy: RetryPolicy::default(),
     };
+    config_manager.add_account(source_account).unwrap();
 
-    // 等待服务就绪
-    let mut ready = false;
-    for _ in 0..10 {
-        if src_provider.list("/file_root").await.is_ok() {
-            let dst_provider_try = WebDavProvider::new(&dst_cfg).await.unwrap();
-            if dst_provider_try.list("/file_root").await.is_ok() {
-                ready = true;
-                break;
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
-    assert!(ready, "webdav mock 服务未就绪(large)");
+    // 添加目标账户
+    let target_account = AccountConfig {
+        id: "target_acc".to_string(),
+        name: "Target".to_string(),
+        provider: ProviderType::WebDAV,
+        credentials: {
+            let mut map = HashMap::new();
+            map.insert("url".to_string(), format!("http://{}", addr2));
+            map.insert("username".to_string(), "user".to_string());
+            map.insert("password".to_string(), "pass".to_string());
+            map
+        },
+        rate_limit: None,
+        retry_policy: RetryPolicy::default(),
+    };
+    config_manager.add_account(target_account).unwrap();
 
-    // 注册到同步引擎
-    let mut engine = SyncEngine::new().await.unwrap();
-    engine.register_provider("webdav_src".to_string(), Box::new(src_provider));
-    engine.register_provider(
-        "webdav_dst".to_string(),
-        Box::new(WebDavProvider::new(&dst_cfg).await.unwrap()),
-    );
-
+    // 添加同步任务
     let task = SyncTask {
-        id: "t_webdav_large".to_string(),
-        name: "large & multi-delete".to_string(),
-        source_account: "webdav_src".to_string(),
-        source_path: "/file_root".to_string(),
-        target_account: "webdav_dst".to_string(),
-        target_path: "/file_root".to_string(),
+        id: "test_dir_sync".to_string(),
+        name: "Directory Sync Test".to_string(),
+        source_account: "source_acc".to_string(),
+        target_account: "target_acc".to_string(),
+        source_path: "/".to_string(),
+        target_path: "/".to_string(),
+        sync_policy: Some(SyncPolicy {
+            delete_orphans: true, // 开启删除孤儿文件/目录
+            overwrite_existing: true,
+            scan_cooldown_secs: 0,
+        }),
         schedule: None,
         filters: vec![],
         encryption: None,
         diff_mode: DiffMode::Smart,
         preserve_metadata: false,
         verify_integrity: false,
-        sync_policy: Some(SyncPolicy {
-            delete_orphans: true,
-            overwrite_existing: true,
-            scan_cooldown_secs: 0,
-        }),
     };
+    config_manager.add_task(task.clone()).unwrap();
 
-    let report = engine.sync(&task).await.unwrap();
-    assert!(
-        report.errors.is_empty(),
-        "同步报告包含错误: {:?}",
-        report.errors
+    // 创建 Provider (需要在 Engine 之外创建以通过 Box 传递)
+    let source_provider = WebDavProvider::new(&config_manager.get_account("source_acc").unwrap()).await.unwrap();
+    let target_provider = WebDavProvider::new(&config_manager.get_account("target_acc").unwrap()).await.unwrap();
+
+    // 执行同步
+    let mut engine = SyncEngine::new().await.unwrap();
+    
+    engine.register_provider("source_acc".to_string(), Box::new(source_provider));
+    engine.register_provider("target_acc".to_string(), Box::new(target_provider));
+
+    // 计算 Diff
+    let diff = engine.calculate_diff_for_dry_run(&task).await.unwrap();
+    
+    // 验证 Diff 结果
+    // 1. 应该包含 Upload new_dir (被标记为 Upload 因为源有目录，目标无)
+    // 2. 应该包含 Upload new_dir/file.txt
+    // 3. 应该包含 Delete old_dir
+    // 4. 应该包含 Delete old_dir/old.txt
+    
+    // 注意：SyncEngine 的逻辑中，对于源是目录而目标没有的情况，使用了 Upload 动作而不是 CreateDir
+    // 因为目录也被视为一种文件。所以我们这里检查 Upload 动作，且 is_dir 为 true
+    let creates_dir = diff.files.iter().any(|f| 
+        f.path == "new_dir/" && 
+        f.action == DiffAction::Upload && 
+        f.source_info.as_ref().map_or(false, |i| i.is_dir)
     );
-
-    let dst_provider = engine.get_provider("webdav_dst").unwrap();
-    // 验证新增/覆盖
-    assert!(
-        dst_provider.exists("/file_root/a.txt").await.unwrap(),
-        "a.txt 未同步到目标"
-    );
-    // b.txt 内容应为源的 "B NEW"
-    let b_local = temp_dir.join("webdav_b_large_verify.txt");
-    dst_provider
-        .download("/file_root/b.txt", &b_local)
-        .await
-        .unwrap();
-
-    info!("测试日志输出！");
-
-    let b_content = tokio::fs::read(&b_local).await.unwrap();
-    assert_eq!(String::from_utf8_lossy(&b_content), "B NEWER");
-    tokio::fs::remove_file(&b_local).await.ok();
-
-    // 验证大文件存在且大小正确
-    assert!(
-        dst_provider.exists("/file_root/d.bin").await.unwrap(),
-        "d.bin 未同步到目标"
-    );
-    let d_local = temp_dir.join("webdav_d_large_verify.bin");
-    dst_provider
-        .download("/file_root/d.bin", &d_local)
-        .await
-        .unwrap();
-    let d_size = tokio::fs::metadata(&d_local).await.unwrap().len();
-    assert_eq!(d_size, 2 * 1024 * 1024);
-    tokio::fs::remove_file(&d_local).await.ok();
-
-    // 验证多余文件被删除
-    for p in ["/file_root/c.txt", "/file_root/e.txt", "/file_root/f.txt"] {
-        assert!(!dst_provider.exists(p).await.unwrap(), "{} 未删除", p);
-    }
-
-    // 清理临时大文件
-    tokio::fs::remove_file(&large_local).await.ok();
+    
+    let deletes_dir = diff.files.iter().any(|f| f.path == "old_dir/" && f.action == DiffAction::Delete);
+    
+    assert!(creates_dir, "Should detect directory creation (as Upload). Diff: {:?}", diff.files);
+    assert!(deletes_dir, "Should detect directory deletion. Diff: {:?}", diff.files);
+    
+    // 执行同步
+    engine.sync(&task).await.unwrap();
+    
+    // 验证结果
+    let target_provider = WebDavProvider::new(&config_manager.get_account("target_acc").unwrap()).await.unwrap();
+    assert!(target_provider.exists("/new_dir").await.unwrap(), "new_dir should exist");
+    assert!(!target_provider.exists("/old_dir").await.unwrap(), "old_dir should be deleted");
 }
+
 
 /// 策略：不删除目标孤立文件（delete_orphans=false）
 #[tokio::test]

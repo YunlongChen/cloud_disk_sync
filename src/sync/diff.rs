@@ -23,6 +23,8 @@ pub enum DiffAction {
     Update,
     /// 文件未变化
     Unchanged,
+    /// 创建目录
+    CreateDir,
 }
 
 impl DiffAction {
@@ -35,6 +37,7 @@ impl DiffAction {
             Self::Move => "move",
             Self::Update => "update",
             Self::Unchanged => "unchanged",
+            Self::CreateDir => "create_dir",
         }
     }
 
@@ -47,6 +50,7 @@ impl DiffAction {
             Self::Move => "📦",
             Self::Update => "🔄",
             Self::Unchanged => "✅",
+            Self::CreateDir => "📁",
         }
     }
 
@@ -191,6 +195,15 @@ impl FileDiff {
         )
     }
 
+    pub fn create_dir(path: String, source_info: FileMetadata) -> Self {
+        Self::new(
+            path,
+            DiffAction::CreateDir,
+            Some(source_info),
+            None,
+        )
+    }
+
     pub fn move_file(
         from: String,
         to: String,
@@ -234,6 +247,7 @@ impl FileDiff {
                 }
             }
             DiffAction::Move => 40,
+            DiffAction::CreateDir => 75, // 在上传文件之前创建目录
             DiffAction::Unchanged => 10,
             _ => 30,
         }
@@ -344,6 +358,7 @@ impl FileDiff {
                 }
             }
             DiffAction::Update => format!("{} 更新: {} ({})", action_emoji, self.path, size_str),
+            DiffAction::CreateDir => format!("{} 创建目录: {}", action_emoji, self.path),
             DiffAction::Unchanged => format!("{} 未变: {}", action_emoji, self.path),
         }
     }

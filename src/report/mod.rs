@@ -651,6 +651,8 @@ pub enum FileOperation {
     Compress,
     /// 解压文件
     Decompress,
+    /// 创建目录
+    CreateDir,
 }
 
 impl FileOperation {
@@ -669,6 +671,7 @@ impl FileOperation {
             Self::Decrypt => "解密",
             Self::Compress => "压缩",
             Self::Decompress => "解压",
+            Self::CreateDir => "创建目录",
         }
     }
 
@@ -687,6 +690,7 @@ impl FileOperation {
             Self::Decrypt => "🔓",
             Self::Compress => "🗜️",
             Self::Decompress => "🗜️",
+            Self::CreateDir => "📁",
         }
     }
 
@@ -699,6 +703,7 @@ impl FileOperation {
             DiffAction::Update => FileOperation::Update,
             DiffAction::Conflict => FileOperation::Verify, // 冲突文件需要验证
             DiffAction::Unchanged => FileOperation::Verify,
+            DiffAction::CreateDir => FileOperation::CreateDir,
         }
     }
 }

@@ -216,13 +216,31 @@ pub async fn start_mock_server_with_seed(seed: Vec<(&str, &str, bool)>) -> (Sock
                 }
                 let mut files = store.write().await;
                 files.insert(
-                    path_str,
-                    InMemoryFile {
-                        content: body.to_vec(),
-                        is_dir: false,
-                    },
-                );
-                Ok::<_, warp::Rejection>(warp::reply::with_status(
+                                path_str.clone(),
+                                InMemoryFile {
+                                    content: body.to_vec(),
+                                    is_dir: false,
+                                },
+                            );
+
+                            // Ensure parent directories exist
+                            let path = std::path::Path::new(&path_str);
+                            if let Some(parent) = path.parent() {
+                                let parent_str = parent.to_string_lossy().replace("\\", "/");
+                                if !parent_str.is_empty() && parent_str != "/" {
+                                    if !files.contains_key(&parent_str) {
+                                         files.insert(
+                                            parent_str,
+                                            InMemoryFile {
+                                                content: vec![],
+                                                is_dir: true,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+
+                            Ok::<_, warp::Rejection>(warp::reply::with_status(
                     String::new(),
                     warp::http::StatusCode::CREATED,
                 ))
@@ -340,29 +358,65 @@ pub async fn start_mock_server_with_seed(seed: Vec<(&str, &str, bool)>) -> (Sock
                         } else {
                             path_str.clone()
                         };
+                         // Make sure href always has a leading slash
+                        let self_href_path = if !self_href.starts_with('/') {
+                             format!("/{}", self_href)
+                        } else {
+                             self_href
+                        };
+                        
+                        // Remove double slash if present (e.g. //file.txt)
+                        let self_href_path = self_href_path.replace("//", "/");
+
                         xml.push_str(&format!(
                             "<d:response>\n  <d:href>{}</d:href>\n  <d:propstat>\n    <d:prop>\n      <d:getcontentlength>{}</d:getcontentlength>\n      <d:getlastmodified>Thu, 01 Jan 1970 00:00:00 GMT</d:getlastmodified>\n      <d:resourcetype>{}</d:resourcetype>\n    </d:prop>\n    <d:status>HTTP/1.1 200 OK</d:status>\n  </d:propstat>\n</d:response>\n",
-                            self_href,
+                            self_href_path,
                             entry.content.len(),
                             if entry.is_dir { "<d:collection/>" } else { "" }
                         ));
                         // 如果是目录，列出直接子项
                         if entry.is_dir {
-                            for (p, f) in files.iter() {
-                                if p.starts_with(&(path_str.clone() + "/"))
-                                    && p.matches('/').count() == path_str.matches('/').count() + 1
-                                {
-                                    let href = if f.is_dir {
-                                        format!("{}/", p)
-                                    } else {
-                                        p.clone()
-                                    };
-                                    xml.push_str(&format!(
-                                        "<d:response>\n  <d:href>{}</d:href>\n  <d:propstat>\n    <d:prop>\n      <d:getcontentlength>{}</d:getcontentlength>\n      <d:getlastmodified>Thu, 01 Jan 1970 00:00:00 GMT</d:getlastmodified>\n      <d:resourcetype>{}</d:resourcetype>\n    </d:prop>\n    <d:status>HTTP/1.1 200 OK</d:status>\n  </d:propstat>\n</d:response>\n",
-                                        href,
-                                        f.content.len(),
-                                        if f.is_dir { "<d:collection/>" } else { "" }
-                                    ));
+                            let depth = _depth.as_deref().unwrap_or("1");
+                            if depth != "0" {
+                                let prefix = if path_str == "/" {
+                                    "/".to_string()
+                                } else {
+                                    format!("{}/", path_str)
+                                };
+
+                                for (p, f) in files.iter() {
+                                    if p.starts_with(&prefix) && p != &path_str {
+                                        let rel = p.strip_prefix(&prefix).unwrap();
+                                        let is_direct_child = if depth == "infinity" {
+                                            true
+                                        } else {
+                                            !rel.trim_end_matches('/').contains('/')
+                                        };
+
+                                        if is_direct_child {
+                                            let href = if f.is_dir {
+                                                format!("{}/", p)
+                                            } else {
+                                                p.clone()
+                                            };
+                                            // Make sure href always has a leading slash if p doesn't (though p usually does)
+                                            let href_path = if !href.starts_with('/') {
+                                                 format!("/{}", href)
+                                            } else {
+                                                 href
+                                            };
+                                            
+                                            // Remove double slash if present (e.g. //file.txt)
+                                            let href_path = href_path.replace("//", "/");
+
+                                            xml.push_str(&format!(
+                                                "<d:response>\n  <d:href>{}</d:href>\n  <d:propstat>\n    <d:prop>\n      <d:getcontentlength>{}</d:getcontentlength>\n      <d:getlastmodified>Thu, 01 Jan 1970 00:00:00 GMT</d:getlastmodified>\n      <d:resourcetype>{}</d:resourcetype>\n    </d:prop>\n    <d:status>HTTP/1.1 200 OK</d:status>\n  </d:propstat>\n</d:response>\n",
+                                                href_path,
+                                                f.content.len(),
+                                                if f.is_dir { "<d:collection/>" } else { "" }
+                                            ));
+                                        }
+                                    }
                                 }
                             }
                         }

@@ -1,0 +1,26 @@
+services:
+  openlist1:
+    image: openlistteam/openlist:latest
+    container_name: openlist1
+    user: "0:0"
+    ports:
+      - "5241:5244"
+    environment:
+      - UMASK=022
+    volumes:
+      - ./openlist1/data:/opt/openlist/data
+      - ./openlist1/storage:/opt/openlist/data/storage
+    restart: unless-stopped
+
+  openlist2:
+    image: openlistteam/openlist:latest
+    container_name: openlist2
+    user: "0:0"
+    ports:
+      - "5242:5244"
+    environment:
+      - UMASK=022
+    volumes:
+      - ./openlist2/data:/opt/openlist/data
+      - ./openlist2/storage:/opt/openlist/data/storage
+    restart: unless-stopped

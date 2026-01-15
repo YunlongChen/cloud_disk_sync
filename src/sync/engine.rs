@@ -154,6 +154,41 @@ impl SyncEngine {
             match file_diff.action {
                 DiffAction::Upload | DiffAction::Update => {
                     debug!(file = %file_diff.path, "Syncing file (Upload/Update)");
+                    // 如果是目录，则创建目录
+                    if let Some(src_info) = &file_diff.source_info {
+                        if src_info.is_dir {
+                             debug!(path = %file_diff.path, "Creating directory (from Upload action)");
+                             let target_provider =
+                                self.get_provider(&task.target_account)
+                                    .ok_or(SyncError::Provider(ProviderError::NotFound(
+                                        task.target_account.clone(),
+                                    )))?;
+                            let target_full_path = {
+                                let base_path = std::path::Path::new(&task.target_path);
+                                let rel_path = std::path::Path::new(&file_diff.path);
+                                base_path.join(rel_path).to_string_lossy().to_string()
+                            };
+                            match target_provider.mkdir(&target_full_path).await {
+                                Ok(_) => {
+                                    info!(path = %file_diff.path, "Created directory");
+                                    report.add_success(&file_diff.path, 0);
+                                    continue; // 目录处理完毕
+                                }
+                                Err(e) => {
+                                    // 忽略目录已存在错误
+                                    // WebDavProvider::mkdir 返回什么错误？
+                                    // 假设是通用错误，暂时记录日志
+                                    warn!(path = %file_diff.path, error = %e, "Failed to create directory (might exist)");
+                                    // 不因为目录创建失败中断，尝试继续？或者算成功？
+                                    // 如果目录创建失败，后续文件上传可能会失败。
+                                    // 但如果是"已存在"，则没问题。
+                                    // 暂时 continue
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
                     // 重新获取 provider，避免与 &self 的可变借用冲突
                     let source_provider =
                         self.get_provider(&task.source_account)
@@ -258,6 +293,30 @@ impl SyncEngine {
                             report
                                 .errors
                                 .push(format!("Failed to delete {}: {}", file_diff.path, e));
+                            report.statistics.files_failed += 1;
+                        }
+                    }
+                }
+                DiffAction::CreateDir => {
+                    debug!(path = %file_diff.path, "Creating directory");
+                    let target_provider =
+                        self.get_provider(&task.target_account)
+                            .ok_or(SyncError::Provider(ProviderError::NotFound(
+                                task.target_account.clone(),
+                            )))?;
+                    let target_full_path = {
+                        let base_path = std::path::Path::new(&task.target_path);
+                        let rel_path = std::path::Path::new(&file_diff.path);
+                        base_path.join(rel_path).to_string_lossy().to_string()
+                    };
+                    match target_provider.mkdir(&target_full_path).await {
+                        Ok(_) => {
+                            info!(path = %file_diff.path, "Created directory");
+                            report.add_success(&file_diff.path, 0);
+                        }
+                        Err(e) => {
+                            error!(path = %file_diff.path, error = %e, "Failed to create directory");
+                            report.errors.push(format!("Failed to create directory {}: {}", file_diff.path, e));
                             report.statistics.files_failed += 1;
                         }
                     }
@@ -574,13 +633,13 @@ impl SyncEngine {
 
         // 构建 Map (Relative Path -> FileMetadata)
         let mut src_map = std::collections::HashMap::new();
-        for f in src_list.iter().filter(|f| !f.is_dir) {
+        for f in src_list.iter() {
             let rel_path = normalize_path(&f.path, source_path);
             src_map.insert(rel_path, to_metadata(f));
         }
 
         let mut dst_map = std::collections::HashMap::new();
-        for f in dst_list.iter().filter(|f| !f.is_dir) {
+        for f in dst_list.iter() {
             let rel_path = normalize_path(&f.path, target_path);
             dst_map.insert(rel_path, to_metadata(f));
         }

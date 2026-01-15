@@ -242,6 +242,7 @@ async fn cmd_diff_task(
             crate::sync::diff::DiffAction::Download => ("<---- (Down)", "c"), // Cyan
             crate::sync::diff::DiffAction::Conflict => ("?? Conflict", "m"), // Magenta
             crate::sync::diff::DiffAction::Move => ("----> (Mov)", "b"), // Blue
+            crate::sync::diff::DiffAction::CreateDir => ("+DIR+ (New)", "g"), // Green
             crate::sync::diff::DiffAction::Unchanged => {
                 if file.tags.contains(&"target_only".to_string()) {
                     ("  |   (Ign)", "d") // Dim/Gray (Target Only)

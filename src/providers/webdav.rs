@@ -168,6 +168,11 @@ impl WebDavProvider {
                             path = format!("/{}", path);
                         }
                         
+                        // Handle cases where the path might be just "/" after trimming
+                        if path.is_empty() {
+                             path = "/".to_string();
+                        }
+                        
                         current_path = Some(path);
                     } else if in_getcontentlength {
                         let size_str = String::from_utf8_lossy(e.as_ref()).to_string();
@@ -187,6 +192,9 @@ impl WebDavProvider {
                             let norm_path = path.trim_end_matches('/');
                             let norm_base = base_path.trim_end_matches('/');
                             
+                            // Debug logging to help trace path issues
+                            debug!(path = %path, norm_path = %norm_path, base = %base_path, norm_base = %norm_base, "Checking if path is base path");
+
                             if norm_path != norm_base && !path.is_empty() {
                                  files.push(FileInfo {
                                     path, // Keep original path (maybe with trailing slash for dirs)
