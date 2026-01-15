@@ -341,8 +341,10 @@ pub async fn start_mock_server_with_seed(seed: Vec<(&str, &str, bool)>) -> (Sock
                             path_str.clone()
                         };
                         xml.push_str(&format!(
-                            "<d:response>\n  <d:href>{}</d:href>\n</d:response>\n",
-                            self_href
+                            "<d:response>\n  <d:href>{}</d:href>\n  <d:propstat>\n    <d:prop>\n      <d:getcontentlength>{}</d:getcontentlength>\n      <d:getlastmodified>Thu, 01 Jan 1970 00:00:00 GMT</d:getlastmodified>\n      <d:resourcetype>{}</d:resourcetype>\n    </d:prop>\n    <d:status>HTTP/1.1 200 OK</d:status>\n  </d:propstat>\n</d:response>\n",
+                            self_href,
+                            entry.content.len(),
+                            if entry.is_dir { "<d:collection/>" } else { "" }
                         ));
                         // 如果是目录，列出直接子项
                         if entry.is_dir {
@@ -356,8 +358,10 @@ pub async fn start_mock_server_with_seed(seed: Vec<(&str, &str, bool)>) -> (Sock
                                         p.clone()
                                     };
                                     xml.push_str(&format!(
-                                        "<d:response>\n  <d:href>{}</d:href>\n</d:response>\n",
-                                        href
+                                        "<d:response>\n  <d:href>{}</d:href>\n  <d:propstat>\n    <d:prop>\n      <d:getcontentlength>{}</d:getcontentlength>\n      <d:getlastmodified>Thu, 01 Jan 1970 00:00:00 GMT</d:getlastmodified>\n      <d:resourcetype>{}</d:resourcetype>\n    </d:prop>\n    <d:status>HTTP/1.1 200 OK</d:status>\n  </d:propstat>\n</d:response>\n",
+                                        href,
+                                        f.content.len(),
+                                        if f.is_dir { "<d:collection/>" } else { "" }
                                     ));
                                 }
                             }

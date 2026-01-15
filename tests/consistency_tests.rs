@@ -166,8 +166,9 @@ async fn test_consistency_conflict_overwrite() {
     common::init_logging();
     // 测试策略：overwrite_existing = true (覆盖)
 
+    // 使用不同长度的内容，确保大小不同，从而触发 diff (因为 mock server 时间可能很接近)
     let (addr1, _store1) =
-        start_mock_server_with_seed(vec![("/file_root/conflict.txt", "source content", false)])
+        start_mock_server_with_seed(vec![("/file_root/conflict.txt", "source content modified", false)])
             .await;
 
     let (addr2, _store2) =
@@ -184,8 +185,13 @@ async fn test_consistency_conflict_overwrite() {
     engine.register_provider("src".to_string(), Box::new(src_provider));
     engine.register_provider("dst".to_string(), Box::new(dst_provider));
 
+    // Debug: Check if files exist
+    let src_p = engine.get_provider("src").unwrap();
+    let files = src_p.list("/file_root").await.unwrap();
+    println!("Source files debug overwrite: {:?}", files);
+
     let task = SyncTask {
-        id: "t_over".to_string(),
+        id: "t_overwrite".to_string(),
         name: "overwrite test".to_string(),
         source_account: "src".to_string(),
         source_path: "/file_root".to_string(),
@@ -208,7 +214,8 @@ async fn test_consistency_conflict_overwrite() {
 
     // 4. 验证
     // Should upload "conflict.txt"
-    assert_eq!(report.statistics.files_synced, 1);
+    println!("Sync Report: {:?}", report);
+    assert_eq!(report.statistics.files_synced, 1, "Files failed: {}, Errors: {:?}", report.statistics.files_failed, report.errors);
 
     // Verify content changed
     let dst_check = engine.get_provider("dst").unwrap();
@@ -218,7 +225,7 @@ async fn test_consistency_conflict_overwrite() {
         .await
         .unwrap();
     let content = tokio::fs::read_to_string(&temp_dl).await.unwrap();
-    assert_eq!(content, "source content");
+    assert_eq!(content, "source content modified");
 }
 
 // Helpers

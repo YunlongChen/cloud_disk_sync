@@ -81,35 +81,70 @@ impl WebDavProvider {
     ) -> Result<Vec<FileInfo>, SyncError> {
         debug!("开始解析 PROPFIND 响应");
         let mut files = Vec::new();
+        
+        let mut current_path: Option<String> = None;
+        let mut current_size: u64 = 0;
+        let mut is_collection = false;
+        let mut in_response = false;
 
-        // 简化的 XML 解析（生产环境建议使用 quick-xml 等库）
         for line in xml.lines() {
-            if line.contains("<d:href>") {
-                // 提取文件路径
-                if let Some(start) = line.find("<d:href>") {
-                    if let Some(end) = line.find("</d:href>") {
-                        let href = &line[start + 8..end];
-                        let path = href.trim_start_matches(&self.base_url);
-
-                        // 跳过基础路径本身
-                        if path == base_path || path.is_empty() {
-                            continue;
-                        }
-
-                        let is_dir = href.ends_with('/');
-                        debug!(path = %path, is_dir = %is_dir, "解析到文件项");
-
-                        files.push(FileInfo {
-                            path: path.to_string(),
-                            size: 0,
+            let line = line.trim();
+            if line.contains("<d:response>") || line.contains("<D:response>") {
+                in_response = true;
+                current_path = None;
+                current_size = 0;
+                is_collection = false;
+            } else if line.contains("</d:response>") || line.contains("</D:response>") {
+                if let Some(path) = current_path.take() {
+                     // 跳过基础路径本身
+                    if path != base_path && !path.is_empty() {
+                         files.push(FileInfo {
+                            path,
+                            size: current_size,
                             modified: SystemTime::now()
                                 .duration_since(UNIX_EPOCH)
                                 .unwrap()
                                 .as_secs() as i64,
                             hash: None,
-                            is_dir,
+                            is_dir: is_collection,
                         });
                     }
+                }
+                in_response = false;
+            }
+
+            if in_response {
+                if line.contains("<d:href>") || line.contains("<D:href>") {
+                    // 提取 href
+                     let start_tag = if line.contains("<d:href>") { "<d:href>" } else { "<D:href>" };
+                     let end_tag = if line.contains("</d:href>") { "</d:href>" } else { "</D:href>" };
+                     
+                     if let Some(start) = line.find(start_tag) {
+                        if let Some(end) = line.find(end_tag) {
+                            let href = &line[start + start_tag.len()..end];
+                            // Decode URL encoding if necessary (simplified here: assume no encoding for now)
+                            // let decoded_href = urlencoding::decode(href).unwrap_or(std::borrow::Cow::Borrowed(href));
+                            let path = href.trim_start_matches(&self.base_url).to_string();
+                            current_path = Some(path);
+                        }
+                    }
+                }
+                
+                if line.contains("getcontentlength") {
+                    // 提取大小
+                    // 尝试匹配 >数字<
+                    if let Some(start) = line.find('>') {
+                        if let Some(end) = line[start+1..].find('<') {
+                             let size_str = &line[start+1..start+1+end];
+                             if let Ok(s) = size_str.parse::<u64>() {
+                                 current_size = s;
+                             }
+                        }
+                    }
+                }
+
+                if line.contains("<d:collection/>") || line.contains("<D:collection/>") {
+                    is_collection = true;
                 }
             }
         }

@@ -88,6 +88,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cli::TaskCmd::List => {
                 cmd_list_tasks(&config_manager)?;
             }
+            cli::TaskCmd::Remove {
+                id,
+                name_or_id,
+                name,
+                force,
+            } => {
+                // 优先使用 name_or_id，其次使用 id，最后尝试 name (deprecated)
+                let target_id = name_or_id
+                    .or(id)
+                    .or(name)
+                    .ok_or("必须提供任务ID或名称 (使用 --id 或直接提供名称)")?;
+                cmd_remove_task(&mut config_manager, &target_id, force)?;
+            }
         },
         Commands::Report { task, detailed } => {
             cmd_generate_report(&task, detailed)?;
@@ -101,7 +114,182 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Plugins => {
             println!("查看所有插件！")
         }
+        Commands::Completion { shell } => {
+            cmd_generate_completion(shell)?;
+        }
+        Commands::Diff { name_or_id, id } => {
+            let target_id = name_or_id
+                .or(id)
+                .ok_or("必须提供任务ID或名称 (使用 --task 或直接提供名称)")?;
+            cmd_diff_task(&config_manager, &target_id).await?;
+        }
     }
+
+    Ok(())
+}
+
+use crate::providers::{AliYunDriveProvider, StorageProvider, WebDavProvider};
+
+async fn create_provider(
+    account: &AccountConfig,
+) -> Result<Box<dyn StorageProvider>, Box<dyn std::error::Error>> {
+    match account.provider {
+        ProviderType::AliYunDrive => {
+            let provider = AliYunDriveProvider::new(account).await?;
+            Ok(Box::new(provider))
+        }
+        ProviderType::WebDAV => {
+            let provider = WebDavProvider::new(account).await?;
+            Ok(Box::new(provider))
+        }
+        _ => Err(format!("Unsupported provider type: {:?}", account.provider).into()),
+    }
+}
+
+async fn cmd_diff_task(
+    config_manager: &ConfigManager,
+    id_or_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use indicatif::{ProgressBar, ProgressStyle};
+    use std::time::Duration;
+
+    let id = find_task_id(config_manager, id_or_name)
+        .ok_or_else(|| format!("未找到任务: {}", id_or_name))?;
+
+    let task = config_manager
+        .get_task(&id)
+        .ok_or_else(|| format!("任务不存在: {}", id))?;
+
+    println!("🔍 正在分析差异: {} ({})", &task.name, id);
+    println!("   源: {}:{}", &task.source_account, &task.source_path);
+    println!("   目标: {}:{}", &task.target_account, &task.target_path);
+
+    let mut engine = SyncEngine::new().await?;
+
+    // 注册源提供商
+    let source_account = config_manager
+        .get_account(&task.source_account)
+        .ok_or_else(|| format!("源账户不存在: {}", task.source_account))?;
+    
+    let source_provider = create_provider(&source_account).await?;
+    engine.register_provider(task.source_account.clone(), source_provider);
+
+    // 注册目标提供商
+    let target_account = config_manager
+        .get_account(&task.target_account)
+        .ok_or_else(|| format!("目标账户不存在: {}", task.target_account))?;
+
+    let target_provider = create_provider(&target_account).await?;
+    engine.register_provider(task.target_account.clone(), target_provider);
+
+    // 创建一个不定长的 spinner 进度条，因为 diff 计算时间未知
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+            .template("{spinner:.blue} {msg}")?,
+    );
+    spinner.enable_steady_tick(Duration::from_millis(100));
+    spinner.set_message("正在扫描文件列表并计算差异...");
+
+    // 执行 dry run 获取差异
+    let mut diff_result = engine.calculate_diff_for_dry_run(&task).await?;
+
+    spinner.finish_and_clear();
+
+    if diff_result.files.is_empty() {
+        println!("✅ 目录为空或未发现任何文件。");
+        return Ok(());
+    }
+
+    println!("\n📝 差异摘要:");
+    println!(
+        "  总文件数: {} | 需传输: {} | 需删除: {}",
+        diff_result.files.len(),
+        diff_result.files_to_transfer,
+        diff_result.files_to_delete
+    );
+
+    println!("\n📄 文件列表详情:");
+    
+    // 使用 prettytable 格式化输出
+    use prettytable::{row, Table, format};
+
+    // 按路径排序，方便查看
+    diff_result.files.sort_by(|a, b| a.path.cmp(&b.path));
+
+    let mut table = Table::new();
+    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
+    table.set_titles(row!["Path", "Source", "Action", "Target"]);
+
+    for file in diff_result.files {
+        let source_status = if let Some(info) = &file.source_info {
+            format_bytes(info.size)
+        } else {
+            "-".to_string()
+        };
+
+        let target_status = if let Some(info) = &file.target_info {
+            format_bytes(info.size)
+        } else {
+            "-".to_string()
+        };
+
+        let (action_str, color) = match file.action {
+            crate::sync::diff::DiffAction::Upload => ("----> (New)", "g"), // Green
+            crate::sync::diff::DiffAction::Update => ("----> (Upd)", "y"), // Yellow
+            crate::sync::diff::DiffAction::Delete => ("  X   (Del)", "r"), // Red
+            crate::sync::diff::DiffAction::Download => ("<---- (Down)", "c"), // Cyan
+            crate::sync::diff::DiffAction::Conflict => ("?? Conflict", "m"), // Magenta
+            crate::sync::diff::DiffAction::Move => ("----> (Mov)", "b"), // Blue
+            crate::sync::diff::DiffAction::Unchanged => {
+                if file.tags.contains(&"target_only".to_string()) {
+                    ("  |   (Ign)", "d") // Dim/Gray (Target Only)
+                } else if file.tags.contains(&"skipped_overwrite".to_string()) {
+                    ("  |   (Skip)", "y") // Yellow (Skipped Update)
+                } else {
+                    ("=====", "") // Default (Same)
+                }
+            }
+        };
+
+        // 由于 prettytable 的颜色支持比较基础，这里简单处理
+        // 如果想支持颜色，可以使用 term 库或者 prettytable 的 color feature
+        // 这里直接输出文本
+        
+        table.add_row(row![
+            file.path,
+            source_status,
+            action_str,
+            target_status
+        ]);
+    }
+
+    table.printstd();
+
+    Ok(())
+}
+
+fn cmd_generate_completion(shell: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    use clap::CommandFactory;
+    use clap_complete::{generate, Shell};
+    use std::io;
+
+    let shell_type = match shell.as_deref() {
+        Some("bash") => Shell::Bash,
+        Some("zsh") => Shell::Zsh,
+        Some("fish") => Shell::Fish,
+        Some("powershell") | Some("pwsh") => Shell::PowerShell,
+        Some("elvish") => Shell::Elvish,
+        _ => {
+            // 如果未指定，尝试根据环境判断，或默认为 bash
+            Shell::Bash
+        }
+    };
+
+    let mut cmd = Cli::command();
+    let bin_name = cmd.get_name().to_string();
+    generate(shell_type, &mut cmd, bin_name, &mut io::stdout());
 
     Ok(())
 }
@@ -415,6 +603,91 @@ fn get_task_status(task: &SyncTask) -> String {
     // 这里可以检查任务上次执行时间、是否启用等
     // 简化实现，总是返回就绪
     "✅ 就绪".to_string()
+}
+
+fn cmd_remove_task(
+    config_manager: &mut ConfigManager,
+    id_or_name: &str,
+    force: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let id = find_task_id(config_manager, id_or_name)
+        .ok_or_else(|| format!("未找到任务: {}", id_or_name))?;
+
+    let task_name = config_manager
+        .get_task(&id)
+        .map(|t| t.name.clone())
+        .unwrap_or_else(|| "未知任务".to_string());
+
+    let confirm_msg = format!(
+        "确定要删除任务 '{}' (ID: {}) 吗?\n⚠️  注意: 此操作还将删除所有相关的同步报告记录",
+        task_name, id
+    );
+
+    // 确认删除
+    if force
+        || dialoguer::Confirm::new()
+            .with_prompt(confirm_msg)
+            .default(false)
+            .interact()?
+    {
+        // 1. 从配置中移除任务
+        config_manager.remove_task(&id)?;
+        config_manager.save()?;
+
+        // 2. 删除关联的同步报告
+        if let Err(e) = remove_task_reports(&id) {
+            eprintln!("⚠️  任务已删除，但清理同步报告失败: {}", e);
+        } else {
+            println!("🗑️  已清理关联的同步报告");
+        }
+
+        println!("✅ 任务已删除: {}", id);
+    } else {
+        println!("❌ 操作已取消");
+    }
+    Ok(())
+}
+
+fn find_task_id(config_manager: &ConfigManager, id_or_name: &str) -> Option<String> {
+    // 尝试直接作为 ID 查找
+    if config_manager.get_task(id_or_name).is_some() {
+        return Some(id_or_name.to_string());
+    }
+
+    // 尝试作为名称查找
+    for task in config_manager.get_tasks().values() {
+        if task.name == id_or_name {
+            return Some(task.id.clone());
+        }
+    }
+
+    None
+}
+
+fn remove_task_reports(task_id: &str) -> std::io::Result<()> {
+    let reports_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("disksync")
+        .join("reports");
+
+    if !reports_dir.exists() {
+        return Ok(());
+    }
+
+    // 遍历报告目录，删除包含 task_id 的文件
+    // 报告文件名通常包含 task_id，例如: report_{task_id}_{timestamp}.json
+    for entry in fs::read_dir(reports_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                if file_name.contains(task_id) {
+                    fs::remove_file(path)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn cmd_create_task(

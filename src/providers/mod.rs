@@ -1,6 +1,7 @@
-mod aliyun;
-mod webdav;
+pub mod aliyun;
+pub mod webdav;
 
+pub use aliyun::AliYunDriveProvider;
 pub use webdav::WebDavProvider;
 
 use crate::config::RateLimitConfig;

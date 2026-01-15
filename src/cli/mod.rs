@@ -66,6 +66,23 @@ pub enum Commands {
 
     /// List all plugins
     Plugins,
+
+    /// Generate shell completions
+    Completion {
+        /// Shell type (bash, zsh, fish, powershell, elvish)
+        #[arg(short, long)]
+        shell: Option<String>,
+    },
+
+    /// Show file differences for a sync task
+    Diff {
+        /// Task ID or Name (positional)
+        name_or_id: Option<String>,
+
+        /// Task ID or Name
+        #[arg(short = 't', long = "task")]
+        id: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -151,6 +168,23 @@ pub enum TaskCmd {
     },
     /// List all tasks
     List,
+    /// Remove a sync task
+    Remove {
+        /// Task ID or Name
+        #[arg(short, long)]
+        id: Option<String>,
+
+        /// Task ID or Name (positional)
+        name_or_id: Option<String>,
+
+        /// Task Name (optional, deprecated)
+        #[arg(short, long)]
+        name: Option<String>,
+
+        /// Force removal without confirmation
+        #[arg(short, long)]
+        force: bool,
+    },
 }
 
 #[cfg(test)]
@@ -316,6 +350,92 @@ mod tests {
                 assert_eq!(name_or_id, Some("test-task".to_string()));
                 assert_eq!(source, Some("acc1".to_string()));
                 assert_eq!(target, Some("acc2".to_string()));
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_task_remove_positional() {
+        let args = ["cloud-disk-sync", "tasks", "remove", "task_35d"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Tasks(TaskCmd::Remove { id, name_or_id, name, force }) => {
+                assert_eq!(id, None);
+                assert_eq!(name_or_id, Some("task_35d".to_string()));
+                assert_eq!(name, None);
+                assert_eq!(force, false);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_task_remove_id() {
+        let args = ["cloud-disk-sync", "tasks", "remove", "--id", "task_35d"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Tasks(TaskCmd::Remove { id, name_or_id, name, force }) => {
+                assert_eq!(id, Some("task_35d".to_string()));
+                assert_eq!(name_or_id, None);
+                assert_eq!(name, None);
+                assert_eq!(force, false);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_task_remove_name() {
+        let args = ["cloud-disk-sync", "tasks", "remove", "--name", "test-task"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Tasks(TaskCmd::Remove { id, name_or_id, name, force }) => {
+                assert_eq!(id, None);
+                assert_eq!(name_or_id, None);
+                assert_eq!(name, Some("test-task".to_string()));
+                assert_eq!(force, false);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_task_remove_force() {
+        let args = ["cloud-disk-sync", "tasks", "remove", "task_35d", "-f"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Tasks(TaskCmd::Remove { id, name_or_id, name, force }) => {
+                assert_eq!(id, None);
+                assert_eq!(name_or_id, Some("task_35d".to_string()));
+                assert_eq!(name, None);
+                assert_eq!(force, true);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_diff_positional() {
+        let args = ["cloud-disk-sync", "diff", "test-task"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Diff { name_or_id, id } => {
+                assert_eq!(name_or_id, Some("test-task".to_string()));
+                assert_eq!(id, None);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_diff_named() {
+        let args = ["cloud-disk-sync", "diff", "--task", "task_123"];
+        let cli = Cli::parse_from(&args);
+        match cli.command {
+            Commands::Diff { name_or_id, id } => {
+                assert_eq!(name_or_id, None);
+                assert_eq!(id, Some("task_123".to_string()));
             }
             _ => panic!("unexpected command"),
         }

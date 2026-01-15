@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use tokio::sync::RwLock;
+use tracing::info;
 use warp::Filter;
 use warp::http::Method;
 
@@ -130,7 +131,7 @@ async fn test_webdav_sync_large_and_multi_delete() {
     // 启动源与目标 mock WebDAV
     let (addr1, _store1) = start_mock_server_with_seed(vec![
         ("/file_root/a.txt", "A NEW", false),
-        ("/file_root/b.txt", "B NEW", false),
+        ("/file_root/b.txt", "B NEWER", false),
     ])
     .await;
     // 为源添加大文件内容到临时文件后再通过 Provider 上传，以模拟真实上传路径
@@ -246,8 +247,11 @@ async fn test_webdav_sync_large_and_multi_delete() {
         .download("/file_root/b.txt", &b_local)
         .await
         .unwrap();
+
+    info!("测试日志输出！");
+
     let b_content = tokio::fs::read(&b_local).await.unwrap();
-    assert_eq!(String::from_utf8_lossy(&b_content), "B NEW");
+    assert_eq!(String::from_utf8_lossy(&b_content), "B NEWER");
     tokio::fs::remove_file(&b_local).await.ok();
 
     // 验证大文件存在且大小正确

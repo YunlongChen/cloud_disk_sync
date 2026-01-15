@@ -129,8 +129,8 @@ impl SyncEngine {
         // 执行同步
         for file_diff in diff.files {
             match file_diff.action {
-                DiffAction::Upload => {
-                    debug!(file = %file_diff.path, "Syncing file (Upload)");
+                DiffAction::Upload | DiffAction::Update => {
+                    debug!(file = %file_diff.path, "Syncing file (Upload/Update)");
                     // 重新获取 provider，避免与 &self 的可变借用冲突
                     let source_provider =
                         self.get_provider(&task.source_account)
@@ -176,8 +176,14 @@ impl SyncEngine {
                             .ok_or(SyncError::Provider(ProviderError::NotFound(
                                 task.target_account.clone(),
                             )))?;
+                    
+                    let target_full_path = {
+                        let base_path = std::path::Path::new(&task.target_path);
+                        let rel_path = std::path::Path::new(&file_diff.path);
+                        base_path.join(rel_path).to_string_lossy().to_string()
+                    };
 
-                    match target_provider.delete(&file_diff.path).await {
+                    match target_provider.delete(&target_full_path).await {
                         Ok(_) => {
                             info!(file = %file_diff.path, "Deleted target file");
                             report.add_success(&file_diff.path, file_diff.size_diff);
@@ -251,30 +257,6 @@ impl Default for RepairResult {
         RepairResult {
             repaired_files: 0,
             repaired_bytes: 0,
-        }
-    }
-}
-
-pub struct DryRunResult {
-    pub total_files: usize,
-    pub files_to_upload: usize,
-    pub files_to_download: usize,
-    pub files_to_delete: usize,
-    pub total_size: u64,
-    pub conflicts: Vec<String>,
-    pub files: Vec<FileDiff>,
-}
-
-impl Default for DryRunResult {
-    fn default() -> Self {
-        DryRunResult {
-            total_files: 0,
-            files_to_upload: 0,
-            files_to_download: 0,
-            files_to_delete: 0,
-            total_size: 0,
-            conflicts: vec![],
-            files: vec![],
         }
     }
 }
@@ -354,9 +336,30 @@ impl SyncEngine {
 
     pub async fn calculate_diff_for_dry_run(
         &self,
-        _task: &SyncTask,
-    ) -> Result<DryRunResult, SyncError> {
-        Ok(DryRunResult::default())
+        task: &SyncTask,
+    ) -> Result<DiffResult, SyncError> {
+        let source_provider =
+            self.get_provider(&task.source_account)
+                .ok_or(SyncError::Provider(ProviderError::NotFound(
+                    task.source_account.clone(),
+                )))?;
+        let target_provider =
+            self.get_provider(&task.target_account)
+                .ok_or(SyncError::Provider(ProviderError::NotFound(
+                    task.target_account.clone(),
+                )))?;
+
+        self.calculate_diff(
+            source_provider.as_ref(),
+            target_provider.as_ref(),
+            &task.source_path,
+            &task.target_path,
+            &task.diff_mode,
+            task.sync_policy.as_ref(),
+            &format!("{}::{}", task.source_account, task.source_path),
+            &format!("{}::{}", task.target_account, task.target_path),
+        )
+        .await
     }
 }
 
@@ -490,55 +493,100 @@ impl SyncEngine {
             fresh
         };
 
-        // 构建集合（仅文件，不含目录）
-        let mut src_set = std::collections::HashSet::new();
-        let mut dst_set = std::collections::HashSet::new();
+        // 辅助函数：将 FileInfo 转换为 FileMetadata
+        let to_metadata = |info: &crate::providers::FileInfo| -> crate::sync::diff::FileMetadata {
+            let mut meta = crate::sync::diff::FileMetadata::new(std::path::PathBuf::from(&info.path));
+            meta.size = info.size;
+            meta.modified = info.modified;
+            meta.is_dir = info.is_dir;
+            meta.file_hash = info.hash.clone();
+            meta
+        };
 
+        // 辅助函数：标准化路径为相对路径
+        let normalize_path = |full_path: &str, root: &str| -> String {
+            let root = root.trim_end_matches('/');
+            if full_path.starts_with(root) {
+                let rel = &full_path[root.len()..];
+                rel.trim_start_matches('/').to_string()
+            } else {
+                full_path.to_string()
+            }
+        };
+
+        // 构建 Map (Relative Path -> FileMetadata)
+        let mut src_map = std::collections::HashMap::new();
         for f in src_list.iter().filter(|f| !f.is_dir) {
-            // 统一路径到目标根目录（假设两端根目录一致）
-            let p = if f.path.starts_with('/') {
-                f.path.clone()
-            } else {
-                format!("{}/{}", source_path.trim_end_matches('/'), f.path)
-            };
-            src_set.insert(p);
+            let rel_path = normalize_path(&f.path, source_path);
+            src_map.insert(rel_path, to_metadata(f));
         }
+
+        let mut dst_map = std::collections::HashMap::new();
         for f in dst_list.iter().filter(|f| !f.is_dir) {
-            let p = if f.path.starts_with('/') {
-                f.path.clone()
-            } else {
-                format!("{}/{}", target_path.trim_end_matches('/'), f.path)
-            };
-            dst_set.insert(p);
+            let rel_path = normalize_path(&f.path, target_path);
+            dst_map.insert(rel_path, to_metadata(f));
+        }
+
+        // 收集所有相对路径
+        let mut all_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for p in src_map.keys() {
+            all_paths.insert(p.clone());
+        }
+        for p in dst_map.keys() {
+            all_paths.insert(p.clone());
         }
 
         let mut diff = DiffResult::new();
 
-        // 需要上传（包括覆盖）：源存在
-        for p in src_set.iter() {
-            let source_meta = crate::sync::diff::FileMetadata::new(std::path::PathBuf::from(p));
-            let target_exists = dst_set.contains(p);
-            // 若不允许覆盖且目标存在，则跳过
-            if !overwrite_existing && target_exists {
-                continue;
-            }
-            let target_meta = if target_exists {
-                Some(crate::sync::diff::FileMetadata::new(
-                    std::path::PathBuf::from(p),
-                ))
-            } else {
-                None
-            };
-            let d = crate::sync::diff::FileDiff::upload(p.clone(), source_meta, target_meta);
-            diff.add_file(d);
-        }
+        for path in all_paths {
+            let src_meta = src_map.get(&path);
+            let dst_meta = dst_map.get(&path);
 
-        // 需要删除：仅目标存在
-        if delete_orphans {
-            for p in dst_set.difference(&src_set) {
-                let target_meta = crate::sync::diff::FileMetadata::new(std::path::PathBuf::from(p));
-                let d = crate::sync::diff::FileDiff::delete(p.clone(), target_meta);
-                diff.add_file(d);
+            match (src_meta, dst_meta) {
+                (Some(s), Some(t)) => {
+                    // 两边都有，比较元数据
+                    // 这里可以加入更复杂的比较逻辑（如哈希）
+                    // 暂时只比较大小和修改时间
+                    let size_match = s.size == t.size;
+                    // 修改时间容差 2秒
+                    let time_match = (s.modified - t.modified).abs() <= 2;
+                    
+                    if size_match && time_match {
+                        // 认为相同
+                        diff.add_file(FileDiff::unchanged(path.clone(), s.clone(), t.clone()));
+                    } else {
+                        // 不同，需要更新
+                        if overwrite_existing {
+                             diff.add_file(FileDiff::update(path.clone(), s.clone(), t.clone()));
+                        } else {
+                             // 不允许覆盖，虽然不同但也标记为 Unchanged (或 Conflict? 视策略而定)
+                             // 这里标记为 Unchanged 但可以加个 Tag 说明被忽略
+                             let mut d = FileDiff::unchanged(path.clone(), s.clone(), t.clone());
+                             d.tags.push("skipped_overwrite".to_string());
+                             diff.add_file(d);
+                        }
+                    }
+                }
+                (Some(s), None) => {
+                    // 只有源有 -> Upload
+                    diff.add_file(FileDiff::upload(path.clone(), s.clone(), None));
+                }
+                (None, Some(t)) => {
+                    // 只有目标有 -> Delete (如果 delete_orphans) 否则 Unchanged (TargetOnly)
+                    if delete_orphans {
+                        diff.add_file(FileDiff::delete(path.clone(), t.clone()));
+                    } else {
+                        let mut d = FileDiff::unchanged(path.clone(), crate::sync::diff::FileMetadata::new(std::path::PathBuf::from(&path)), t.clone());
+                        // 标记源信息为"空"的元数据是不太准确的，FileDiff::unchanged 需要 source_info
+                        // 实际上 FileDiff::new 的 source_info 是 Option。
+                        // 但是 FileDiff::unchanged 辅助方法要求 FileMetadata。
+                        // 我们直接用 FileDiff::new
+                        d = FileDiff::new(path.clone(), DiffAction::Unchanged, None, Some(t.clone()));
+                        d.tags.push("target_only".to_string());
+                        diff.add_file(d);
+                    }
+                }
+                (None, None) => unreachable!(),
             }
         }
 
@@ -553,6 +601,16 @@ impl SyncEngine {
         task: &SyncTask,
         report: &mut SyncReport,
     ) -> Result<(), SyncError> {
+        // 构造完整路径辅助函数
+        let join_path = |base: &str, rel: &str| -> String {
+            let base_path = std::path::Path::new(base);
+            let rel_path = std::path::Path::new(rel);
+            base_path.join(rel_path).to_string_lossy().to_string()
+        };
+
+        let source_full_path = join_path(&task.source_path, &file_diff.path);
+        let target_full_path = join_path(&task.target_path, &file_diff.path);
+
         // 检查是否有断点续传记录
         // 查询断点续传记录
         {
@@ -576,7 +634,7 @@ impl SyncEngine {
         let temp_path = self.create_temp_file()?;
 
         // 下载文件
-        let download_result = source.download(&file_diff.path, &temp_path).await?;
+        let download_result = source.download(&source_full_path, &temp_path).await?;
 
         // 加密（如果需要）
         let (encrypted_data, metadata) = if let Some(enc_config) = &task.encryption {
@@ -590,10 +648,10 @@ impl SyncEngine {
         // 上传文件
         let upload_result = if let Some(encrypted) = encrypted_data {
             // 上传加密文件
-            target.upload(&encrypted, &file_diff.path).await?
+            target.upload(&encrypted, &target_full_path).await?
         } else {
             // 上传原始文件
-            target.upload(&temp_path, &file_diff.path).await?
+            target.upload(&temp_path, &target_full_path).await?
         };
 
         // 记录成功
