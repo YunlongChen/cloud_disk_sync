@@ -53,6 +53,7 @@ urlencoding = "2.1.3"
 quick-xml = "0.39.0"
 ratatui = "0.30.0"
 crossterm = "0.29.0"
+unicode-width = "0.2.2"
 
 [dev-dependencies]
 warp = "0.3"

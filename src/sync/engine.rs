@@ -3,7 +3,7 @@ use crate::config::{DiffMode, SyncTask};
 use crate::encryption::EncryptionManager;
 use crate::error::{ProviderError, SyncError};
 use crate::providers::StorageProvider;
-use crate::report::{SyncReport, FileOperation};
+use crate::report::{FileOperation, SyncReport};
 use crate::sync::diff::{ChecksumType, DiffAction, DiffResult, FileDiff};
 use dashmap::DashMap;
 use rusqlite::{Connection, params};
@@ -259,7 +259,11 @@ impl SyncEngine {
                         }
                         Err(e) => {
                             error!(file = %file_diff.path, error = %e, "Sync failed");
-                            report.add_failure(&file_diff.path, FileOperation::from_diff_action(file_diff.action), e.to_string());
+                            report.add_failure(
+                                &file_diff.path,
+                                FileOperation::from_diff_action(file_diff.action),
+                                e.to_string(),
+                            );
                         }
                     }
                 }
@@ -288,7 +292,11 @@ impl SyncEngine {
                         }
                         Err(e) => {
                             error!(file = %file_diff.path, error = %e, "Failed to delete file");
-                            report.add_failure(&file_diff.path, FileOperation::Delete, e.to_string());
+                            report.add_failure(
+                                &file_diff.path,
+                                FileOperation::Delete,
+                                e.to_string(),
+                            );
                         }
                     }
                 }
@@ -311,7 +319,11 @@ impl SyncEngine {
                         }
                         Err(e) => {
                             error!(path = %file_diff.path, error = %e, "Failed to create directory");
-                            report.add_failure(&file_diff.path, FileOperation::CreateDir, e.to_string());
+                            report.add_failure(
+                                &file_diff.path,
+                                FileOperation::CreateDir,
+                                e.to_string(),
+                            );
                         }
                     }
                 }
@@ -322,7 +334,7 @@ impl SyncEngine {
                 _ => {}
             }
         }
-        
+
         let duration = start_time.elapsed().as_secs_f64();
         report.statistics.finalize(duration);
         report.duration_seconds = duration as i64;

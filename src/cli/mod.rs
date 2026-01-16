@@ -38,6 +38,10 @@ pub enum Commands {
 
         #[arg(short, long)]
         resume: bool,
+
+        /// Disable progress bar output
+        #[arg(long)]
+        no_progress: bool,
     },
 
     /// Show sync report
