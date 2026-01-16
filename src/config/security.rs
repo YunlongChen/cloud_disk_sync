@@ -1,6 +1,6 @@
 use aes_gcm::{
-    aead::{Aead, KeyInit},
     Aes256Gcm, Key, Nonce,
+    aead::{Aead, KeyInit},
 };
 use rand::RngCore;
 use std::fs;
@@ -40,7 +40,7 @@ impl SecurityManager {
         // Generate new key
         let mut key_bytes = [0u8; 32];
         rand::rng().fill_bytes(&mut key_bytes);
-        
+
         if let Err(e) = fs::write(path, &key_bytes) {
             warn!("Failed to save security key: {}", e);
         } else {
@@ -64,7 +64,7 @@ impl SecurityManager {
             Ok(ciphertext) => {
                 let mut combined = nonce_bytes.to_vec();
                 combined.extend_from_slice(&ciphertext);
-                
+
                 // Use engine for base64
                 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
                 format!("{}{}", ENC_PREFIX, BASE64.encode(combined))
@@ -82,7 +82,7 @@ impl SecurityManager {
         }
 
         let encoded = &text[ENC_PREFIX.len()..];
-        
+
         use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
         let bytes = match BASE64.decode(encoded) {
             Ok(b) => b,

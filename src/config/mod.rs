@@ -162,7 +162,9 @@ impl ConfigManager {
     }
 
     pub fn new_with_path(config_path: PathBuf) -> Result<Self, ConfigError> {
-        let parent = config_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        let parent = config_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
         create_dir_all(parent).unwrap();
 
         let security_manager = SecurityManager::new(parent);
@@ -186,9 +188,12 @@ impl ConfigManager {
             let mut config: ConfigFile = serde_yaml::from_str(&content).unwrap();
 
             // 执行配置迁移
-            let config_dir = self.config_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+            let config_dir = self
+                .config_path
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."));
             let mut migration_occurred = false;
-            
+
             // 只要版本不是 0.1.0，就尝试迁移/重置
             if config.version != "0.1.0" {
                 if let Err(e) = migrator::ConfigMigrator::migrate(&mut config, config_dir) {
@@ -216,7 +221,7 @@ impl ConfigManager {
                 .into_iter()
                 .map(|t| (t.id.clone(), t))
                 .collect();
-            
+
             // 如果发生了迁移，保存更新后的配置
             if migration_occurred {
                 tracing::info!("Config migration occurred, saving updated config...");
@@ -229,7 +234,9 @@ impl ConfigManager {
     }
 
     pub fn save(&self) -> Result<(), ConfigError> {
-        let accounts: Vec<AccountConfig> = self.accounts.values()
+        let accounts: Vec<AccountConfig> = self
+            .accounts
+            .values()
             .cloned()
             .map(|mut a| {
                 // 加密凭据

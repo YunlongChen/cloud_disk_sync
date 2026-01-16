@@ -58,9 +58,9 @@ async fn test_consistency_deep_nesting() {
         preserve_metadata: false,
         verify_integrity: true, // 开启校验
         sync_policy: Some(SyncPolicy {
-             delete_orphans: true,
-             overwrite_existing: true,
-             scan_cooldown_secs: 0,
+            delete_orphans: true,
+            overwrite_existing: true,
+            scan_cooldown_secs: 0,
         }),
     };
 
@@ -68,7 +68,7 @@ async fn test_consistency_deep_nesting() {
 
     // 5. 验证
     // Report errors might not be empty if directories are missing on target?
-    // Engine sync logic: if it's a file, it tries to upload. 
+    // Engine sync logic: if it's a file, it tries to upload.
     // WebDAV upload doesn't automatically create parent dirs on server usually.
     // The previous implementation of MockServer put_route automatically created parent dirs in memory map,
     // but the SyncEngine logic might be failing to create directories explicitly?
@@ -84,7 +84,7 @@ async fn test_consistency_deep_nesting() {
     // Or if `process_file_diff` calls something that fails.
     //
     // In `SyncEngine::process_file_diff`:
-    // DiffAction::Upload -> 
+    // DiffAction::Upload ->
     //   if is_dir -> target_provider.mkdir
     //   else -> target_provider.upload
     //
@@ -95,12 +95,12 @@ async fn test_consistency_deep_nesting() {
     // Note the backslash `\` mixed with forward slash `/`.
     // The path construction in `SyncEngine` or `WebDavProvider` might be using `PathBuf` which on Windows uses `\`.
     // WebDAV requires `/`.
-    
+
     // Check report errors
     if !report.errors.is_empty() {
-         println!("Sync Errors: {:#?}", report.errors);
+        println!("Sync Errors: {:#?}", report.errors);
     }
-    
+
     // We expect successful sync. If errors are about paths, we need to fix path handling.
     // But for now, let's assert that errors are empty.
     assert!(report.errors.is_empty(), "Errors: {:?}", report.errors);
@@ -208,9 +208,12 @@ async fn test_consistency_conflict_overwrite() {
     // 测试策略：overwrite_existing = true (覆盖)
 
     // 使用不同长度的内容，确保大小不同，从而触发 diff (因为 mock server 时间可能很接近)
-    let (addr1, _store1) =
-        start_mock_server_with_seed(vec![("/file_root/conflict.txt", "source content modified", false)])
-            .await;
+    let (addr1, _store1) = start_mock_server_with_seed(vec![(
+        "/file_root/conflict.txt",
+        "source content modified",
+        false,
+    )])
+    .await;
 
     let (addr2, _store2) =
         start_mock_server_with_seed(vec![("/file_root/conflict.txt", "target content", false)])
@@ -256,7 +259,11 @@ async fn test_consistency_conflict_overwrite() {
     // 4. 验证
     // Should upload "conflict.txt"
     println!("Sync Report: {:?}", report);
-    assert_eq!(report.statistics.files_synced, 1, "Files failed: {}, Errors: {:?}", report.statistics.files_failed, report.errors);
+    assert_eq!(
+        report.statistics.files_synced, 1,
+        "Files failed: {}, Errors: {:?}",
+        report.statistics.files_failed, report.errors
+    );
 
     // Verify content changed
     let dst_check = engine.get_provider("dst").unwrap();
@@ -293,7 +300,7 @@ async fn upload_recursive(
     remote_base: &str,
 ) {
     let mut stack = vec![local_dir.to_path_buf()];
-    
+
     while let Some(dir) = stack.pop() {
         let mut entries = tokio::fs::read_dir(&dir).await.unwrap();
         while let Ok(Some(entry)) = entries.next_entry().await {

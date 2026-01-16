@@ -29,7 +29,10 @@ impl SystemInfo {
              Version: {}\n\
              OS: {} {}\n\
              Default Config Path: {}",
-            self.version, self.os, self.arch, self.config_path.display()
+            self.version,
+            self.os,
+            self.arch,
+            self.config_path.display()
         )
     }
 }

@@ -41,16 +41,16 @@ async fn test_manual_webdav_connection() {
             match provider.list("/").await {
                 Ok(files) => {
                     println!("✅ 获取目录列表成功，共找到 {} 个文件/目录:", files.len());
-                    println!("{:<10} {:<20} {:<10} {}", "类型", "修改时间", "大小", "路径");
+                    println!(
+                        "{:<10} {:<20} {:<10} {}",
+                        "类型", "修改时间", "大小", "路径"
+                    );
                     println!("{}", "-".repeat(80));
                     for file in files {
                         let type_str = if file.is_dir { "DIR" } else { "FILE" };
                         println!(
                             "{:<10} {:<20} {:<10} {}",
-                            type_str,
-                            file.modified, 
-                            file.size,
-                            file.path
+                            type_str, file.modified, file.size, file.path
                         );
                     }
                 }

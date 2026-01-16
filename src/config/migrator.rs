@@ -1,7 +1,7 @@
 use super::{ConfigFile, security::SecurityManager};
 use crate::error::Result;
-use uuid::Uuid;
 use std::path::Path;
+use uuid::Uuid;
 
 pub struct ConfigMigrator;
 
@@ -12,28 +12,31 @@ impl ConfigMigrator {
         // 无论当前是什么版本，只要不是 0.1.0，我们就统一迁移到 0.1.0
         // 并确保凭据被加密
         if current_version != "0.1.0" {
-             log::info!("Resetting/Migrating config version from {} to 0.1.0", current_version);
-             
-             // 确保基本配置存在
-             if config.security_settings.is_none() {
-                 config.security_settings = Some(super::SecuritySettings::default());
-             }
-             
-             if config.network_settings.is_none() {
-                config.network_settings = Some(super::NetworkSettings::default());
-             }
+            log::info!(
+                "Resetting/Migrating config version from {} to 0.1.0",
+                current_version
+            );
 
-             // 执行加密逻辑 (同之前的 1.1.0 逻辑)
-             let security_manager = SecurityManager::new(config_dir);
-             for account in &mut config.accounts {
+            // 确保基本配置存在
+            if config.security_settings.is_none() {
+                config.security_settings = Some(super::SecuritySettings::default());
+            }
+
+            if config.network_settings.is_none() {
+                config.network_settings = Some(super::NetworkSettings::default());
+            }
+
+            // 执行加密逻辑 (同之前的 1.1.0 逻辑)
+            let security_manager = SecurityManager::new(config_dir);
+            for account in &mut config.accounts {
                 for (_, value) in account.credentials.iter_mut() {
                     if !value.starts_with("ENC:") {
                         *value = security_manager.encrypt(value);
                     }
                 }
-             }
+            }
 
-             config.version = "0.1.0".to_string();
+            config.version = "0.1.0".to_string();
         }
 
         Ok(())

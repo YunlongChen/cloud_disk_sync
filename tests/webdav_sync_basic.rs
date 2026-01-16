@@ -9,7 +9,9 @@ use tracing::info;
 use warp::Filter;
 use warp::http::Method;
 
-use cloud_disk_sync::config::{AccountConfig, ConfigManager, DiffMode, ProviderType, RetryPolicy, SyncPolicy, SyncTask};
+use cloud_disk_sync::config::{
+    AccountConfig, ConfigManager, DiffMode, ProviderType, RetryPolicy, SyncPolicy, SyncTask,
+};
 use cloud_disk_sync::providers::{StorageProvider, WebDavProvider};
 use cloud_disk_sync::sync::diff::DiffAction;
 use cloud_disk_sync::sync::engine::SyncEngine;
@@ -135,17 +137,19 @@ async fn test_webdav_sync_directory_operations() {
     let (addr1, _store1) = start_mock_server_with_seed(vec![
         ("/new_dir/file.txt", "content", false),
         ("/new_dir", "", true),
-    ]).await;
+    ])
+    .await;
 
     // 目标：包含 old_dir/old.txt
     let (addr2, _store2) = start_mock_server_with_seed(vec![
         ("/old_dir/old.txt", "old content", false),
         ("/old_dir", "", true),
-    ]).await;
+    ])
+    .await;
 
     // 创建配置管理器和任务
     let mut config_manager = ConfigManager::new().unwrap();
-    
+
     // 添加源账户
     let source_account = AccountConfig {
         id: "source_acc".to_string(),
@@ -203,46 +207,68 @@ async fn test_webdav_sync_directory_operations() {
     config_manager.add_task(task.clone()).unwrap();
 
     // 创建 Provider (需要在 Engine 之外创建以通过 Box 传递)
-    let source_provider = WebDavProvider::new(&config_manager.get_account("source_acc").unwrap()).await.unwrap();
-    let target_provider = WebDavProvider::new(&config_manager.get_account("target_acc").unwrap()).await.unwrap();
+    let source_provider = WebDavProvider::new(&config_manager.get_account("source_acc").unwrap())
+        .await
+        .unwrap();
+    let target_provider = WebDavProvider::new(&config_manager.get_account("target_acc").unwrap())
+        .await
+        .unwrap();
 
     // 执行同步
     let mut engine = SyncEngine::new().await.unwrap();
-    
+
     engine.register_provider("source_acc".to_string(), Box::new(source_provider));
     engine.register_provider("target_acc".to_string(), Box::new(target_provider));
 
     // 计算 Diff
     let diff = engine.calculate_diff_for_dry_run(&task).await.unwrap();
-    
+
     // 验证 Diff 结果
     // 1. 应该包含 Upload new_dir (被标记为 Upload 因为源有目录，目标无)
     // 2. 应该包含 Upload new_dir/file.txt
     // 3. 应该包含 Delete old_dir
     // 4. 应该包含 Delete old_dir/old.txt
-    
+
     // 注意：SyncEngine 的逻辑中，对于源是目录而目标没有的情况，使用了 Upload 动作而不是 CreateDir
     // 因为目录也被视为一种文件。所以我们这里检查 Upload 动作，且 is_dir 为 true
-    let creates_dir = diff.files.iter().any(|f| 
-        f.path == "new_dir/" && 
-        f.action == DiffAction::Upload && 
-        f.source_info.as_ref().map_or(false, |i| i.is_dir)
+    let creates_dir = diff.files.iter().any(|f| {
+        f.path == "new_dir/"
+            && f.action == DiffAction::Upload
+            && f.source_info.as_ref().map_or(false, |i| i.is_dir)
+    });
+
+    let deletes_dir = diff
+        .files
+        .iter()
+        .any(|f| f.path == "old_dir/" && f.action == DiffAction::Delete);
+
+    assert!(
+        creates_dir,
+        "Should detect directory creation (as Upload). Diff: {:?}",
+        diff.files
     );
-    
-    let deletes_dir = diff.files.iter().any(|f| f.path == "old_dir/" && f.action == DiffAction::Delete);
-    
-    assert!(creates_dir, "Should detect directory creation (as Upload). Diff: {:?}", diff.files);
-    assert!(deletes_dir, "Should detect directory deletion. Diff: {:?}", diff.files);
-    
+    assert!(
+        deletes_dir,
+        "Should detect directory deletion. Diff: {:?}",
+        diff.files
+    );
+
     // 执行同步
     engine.sync(&task).await.unwrap();
-    
-    // 验证结果
-    let target_provider = WebDavProvider::new(&config_manager.get_account("target_acc").unwrap()).await.unwrap();
-    assert!(target_provider.exists("/new_dir").await.unwrap(), "new_dir should exist");
-    assert!(!target_provider.exists("/old_dir").await.unwrap(), "old_dir should be deleted");
-}
 
+    // 验证结果
+    let target_provider = WebDavProvider::new(&config_manager.get_account("target_acc").unwrap())
+        .await
+        .unwrap();
+    assert!(
+        target_provider.exists("/new_dir").await.unwrap(),
+        "new_dir should exist"
+    );
+    assert!(
+        !target_provider.exists("/old_dir").await.unwrap(),
+        "old_dir should be deleted"
+    );
+}
 
 /// 策略：不删除目标孤立文件（delete_orphans=false）
 #[tokio::test]

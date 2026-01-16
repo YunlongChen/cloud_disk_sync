@@ -52,7 +52,7 @@ impl WebDavProvider {
             error!(error = %e, "URL 解析失败");
             ProviderError::ConnectionFailed(format!("Invalid URL: {}", e))
         })?;
-        
+
         let path_prefix = urlencoding::decode(parsed_url.path())
             .unwrap_or(std::borrow::Cow::Borrowed(parsed_url.path()))
             .trim_end_matches('/')
@@ -100,11 +100,11 @@ impl WebDavProvider {
         reader.config_mut().trim_text(true);
 
         let mut buf = Vec::new();
-        
+
         let mut current_path: Option<String> = None;
         let mut current_size: u64 = 0;
         let mut is_collection = false;
-        
+
         // 状态标记
         let mut in_response = false;
         let mut in_href = false;
@@ -118,7 +118,7 @@ impl WebDavProvider {
                 Ok(Event::Start(ref e)) => {
                     let name = e.name();
                     let name_str = String::from_utf8_lossy(name.as_ref()).to_lowercase();
-                    
+
                     if name_str.ends_with("response") {
                         in_response = true;
                         current_path = None;
@@ -152,27 +152,28 @@ impl WebDavProvider {
                         // Workaround for unescape compilation error: use raw string conversion
                         // This assumes standard URLs without complex XML entities needing unescape
                         let href = String::from_utf8_lossy(e.as_ref()).to_string();
-                        
-                         // Decode URL encoding
-                        let decoded_href = urlencoding::decode(&href).unwrap_or(std::borrow::Cow::Borrowed(&href));
+
+                        // Decode URL encoding
+                        let decoded_href =
+                            urlencoding::decode(&href).unwrap_or(std::borrow::Cow::Borrowed(&href));
                         let mut path = decoded_href.to_string();
-                        
+
                         if path.starts_with(&self.base_url) {
                             path = path.trim_start_matches(&self.base_url).to_string();
                         } else if path.starts_with(&self.path_prefix) {
                             path = path.trim_start_matches(&self.path_prefix).to_string();
                         }
-                        
+
                         // 确保路径以 / 开头（如果是根目录下的文件）
                         if !path.starts_with('/') && !path.is_empty() {
                             path = format!("/{}", path);
                         }
-                        
+
                         // Handle cases where the path might be just "/" after trimming
                         if path.is_empty() {
-                             path = "/".to_string();
+                            path = "/".to_string();
                         }
-                        
+
                         current_path = Some(path);
                     } else if in_getcontentlength {
                         let size_str = String::from_utf8_lossy(e.as_ref()).to_string();
@@ -184,25 +185,26 @@ impl WebDavProvider {
                 Ok(Event::End(ref e)) => {
                     let name = e.name();
                     let name_str = String::from_utf8_lossy(name.as_ref()).to_lowercase();
-                    
+
                     if name_str.ends_with("response") {
                         if let Some(path) = current_path.take() {
-                             // 跳过基础路径本身
-                             // Normalize paths for comparison (remove trailing slashes)
+                            // 跳过基础路径本身
+                            // Normalize paths for comparison (remove trailing slashes)
                             let norm_path = path.trim_end_matches('/');
                             let norm_base = base_path.trim_end_matches('/');
-                            
+
                             // Debug logging to help trace path issues
                             debug!(path = %path, norm_path = %norm_path, base = %base_path, norm_base = %norm_base, "Checking if path is base path");
 
                             if norm_path != norm_base && !path.is_empty() {
-                                 files.push(FileInfo {
+                                files.push(FileInfo {
                                     path, // Keep original path (maybe with trailing slash for dirs)
                                     size: current_size,
                                     modified: SystemTime::now()
                                         .duration_since(UNIX_EPOCH)
                                         .unwrap()
-                                        .as_secs() as i64,
+                                        .as_secs()
+                                        as i64,
                                     hash: None,
                                     is_dir: is_collection,
                                 });

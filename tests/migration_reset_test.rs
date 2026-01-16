@@ -46,20 +46,29 @@ schedules: []
     // Initialize ConfigManager
     // This should trigger the "migration" (reset) to 0.1.0 and encryption
     let manager = ConfigManager::new_with_path(config_path.clone()).unwrap();
-    
+
     // Save to persist changes
     manager.save().unwrap();
 
     // Read file back to verify version and encryption
     let content = fs::read_to_string(&config_path).unwrap();
     println!("Config content: {}", content);
-    
-    assert!(content.contains("version: 0.1.0") || content.contains(r#"version: "0.1.0""#), "Version should be reset to 0.1.0");
-    assert!(!content.contains("plaintext_password"), "Password should be encrypted");
+
+    assert!(
+        content.contains("version: 0.1.0") || content.contains(r#"version: "0.1.0""#),
+        "Version should be reset to 0.1.0"
+    );
+    assert!(
+        !content.contains("plaintext_password"),
+        "Password should be encrypted"
+    );
     assert!(content.contains("ENC:"), "Should contain encrypted prefix");
 
     // Verify we can load it back and get the correct password
     let manager2 = ConfigManager::new_with_path(config_path).unwrap();
     let account = manager2.get_account("acc1").unwrap();
-    assert_eq!(account.credentials.get("password").map(|s| s.as_str()), Some("plaintext_password"));
+    assert_eq!(
+        account.credentials.get("password").map(|s| s.as_str()),
+        Some("plaintext_password")
+    );
 }

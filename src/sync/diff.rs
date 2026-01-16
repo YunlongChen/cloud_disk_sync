@@ -196,12 +196,7 @@ impl FileDiff {
     }
 
     pub fn create_dir(path: String, source_info: FileMetadata) -> Self {
-        Self::new(
-            path,
-            DiffAction::CreateDir,
-            Some(source_info),
-            None,
-        )
+        Self::new(path, DiffAction::CreateDir, Some(source_info), None)
     }
 
     pub fn move_file(

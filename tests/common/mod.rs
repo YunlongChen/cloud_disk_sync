@@ -216,31 +216,31 @@ pub async fn start_mock_server_with_seed(seed: Vec<(&str, &str, bool)>) -> (Sock
                 }
                 let mut files = store.write().await;
                 files.insert(
-                                path_str.clone(),
+                    path_str.clone(),
+                    InMemoryFile {
+                        content: body.to_vec(),
+                        is_dir: false,
+                    },
+                );
+
+                // Ensure parent directories exist
+                let path = std::path::Path::new(&path_str);
+                if let Some(parent) = path.parent() {
+                    let parent_str = parent.to_string_lossy().replace("\\", "/");
+                    if !parent_str.is_empty() && parent_str != "/" {
+                        if !files.contains_key(&parent_str) {
+                            files.insert(
+                                parent_str,
                                 InMemoryFile {
-                                    content: body.to_vec(),
-                                    is_dir: false,
+                                    content: vec![],
+                                    is_dir: true,
                                 },
                             );
+                        }
+                    }
+                }
 
-                            // Ensure parent directories exist
-                            let path = std::path::Path::new(&path_str);
-                            if let Some(parent) = path.parent() {
-                                let parent_str = parent.to_string_lossy().replace("\\", "/");
-                                if !parent_str.is_empty() && parent_str != "/" {
-                                    if !files.contains_key(&parent_str) {
-                                         files.insert(
-                                            parent_str,
-                                            InMemoryFile {
-                                                content: vec![],
-                                                is_dir: true,
-                                            },
-                                        );
-                                    }
-                                }
-                            }
-
-                            Ok::<_, warp::Rejection>(warp::reply::with_status(
+                Ok::<_, warp::Rejection>(warp::reply::with_status(
                     String::new(),
                     warp::http::StatusCode::CREATED,
                 ))

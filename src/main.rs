@@ -23,7 +23,7 @@ use crate::{
 use aes_gcm::aead::Aead;
 use clap::Parser;
 use cli::Commands;
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use std::fs;
 use tracing::info;
 use tracing_subscriber;
@@ -51,24 +51,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 provider,
                 token,
             } => {
-                let account_name = name_or_id.or(name).ok_or("必须提供账户名称 (使用 --name 或直接提供名称)")?;
+                let account_name = name_or_id
+                    .or(name)
+                    .ok_or("必须提供账户名称 (使用 --name 或直接提供名称)")?;
                 // provider 现在是可选的，如果在交互模式中未提供，将在 cmd_add_account 内部处理
-                let provider_val = provider.unwrap_or_default(); 
+                let provider_val = provider.unwrap_or_default();
                 cmd_add_account(&mut config_manager, account_name, provider_val, token).await?;
             }
             cli::AccountCmd::List => {
                 cmd_list_accounts(&config_manager)?;
             }
-            cli::AccountCmd::Remove { id, name_or_id, force } => {
-                let target_id = name_or_id.or(id).ok_or("必须提供账户ID或名称 (使用 --id 或直接提供名称)")?;
+            cli::AccountCmd::Remove {
+                id,
+                name_or_id,
+                force,
+            } => {
+                let target_id = name_or_id
+                    .or(id)
+                    .ok_or("必须提供账户ID或名称 (使用 --id 或直接提供名称)")?;
                 cmd_remove_account(&mut config_manager, &target_id, force)?;
             }
-            cli::AccountCmd::Update { id, name_or_id, name, token } => {
-                let target_id = name_or_id.or(id).ok_or("必须提供账户ID或名称 (使用 --id 或直接提供名称)")?;
+            cli::AccountCmd::Update {
+                id,
+                name_or_id,
+                name,
+                token,
+            } => {
+                let target_id = name_or_id
+                    .or(id)
+                    .ok_or("必须提供账户ID或名称 (使用 --id 或直接提供名称)")?;
                 cmd_update_account(&mut config_manager, &target_id, name, token).await?;
             }
             cli::AccountCmd::Status { id, name_or_id } => {
-                let target_id = name_or_id.or(id).ok_or("必须提供账户ID或名称 (使用 --id 或直接提供名称)")?;
+                let target_id = name_or_id
+                    .or(id)
+                    .ok_or("必须提供账户ID或名称 (使用 --id 或直接提供名称)")?;
                 cmd_account_status(&config_manager, &target_id).await?;
             }
             cli::AccountCmd::Browse {
@@ -82,7 +99,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let target_id = name_or_id.or(id).ok_or("必须提供账户ID或名称")?;
                 let target_path = path_pos.or(path).unwrap_or("/".to_string());
 
-                cmd_browse_account(&config_manager, &target_id, target_path, recursive, detail).await?;
+                cmd_browse_account(&config_manager, &target_id, target_path, recursive, detail)
+                    .await?;
             }
         },
         Commands::Tasks(cmd) => match cmd {
@@ -95,8 +113,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 encrypt,
             } => {
                 let task_name = name_or_id.or(name).unwrap_or_default();
-                cmd_create_task(&mut config_manager, task_name, source, target, schedule, encrypt)
-                    .await?;
+                cmd_create_task(
+                    &mut config_manager,
+                    task_name,
+                    source,
+                    target,
+                    schedule,
+                    encrypt,
+                )
+                .await?;
             }
             cli::TaskCmd::List => {
                 cmd_list_tasks(&config_manager)?;
@@ -163,7 +188,7 @@ async fn cmd_browse_account(
     let provider: std::sync::Arc<dyn StorageProvider> = std::sync::Arc::from(provider);
 
     cli::browse::run_browse_tui(provider, path).await?;
-    
+
     Ok(())
 }
 
@@ -210,7 +235,7 @@ async fn cmd_diff_task(
     let source_account = config_manager
         .get_account(&task.source_account)
         .ok_or_else(|| format!("源账户不存在: {}", task.source_account))?;
-    
+
     let source_provider = create_provider(&source_account).await?;
     engine.register_provider(task.source_account.clone(), source_provider);
 
@@ -251,9 +276,9 @@ async fn cmd_diff_task(
     );
 
     println!("\n📄 文件列表详情:");
-    
+
     // 使用 prettytable 格式化输出
-    use prettytable::{format, row, Table};
+    use prettytable::{Table, format, row};
 
     // 按路径排序，方便查看
     diff_result.files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -281,7 +306,7 @@ async fn cmd_diff_task(
             crate::sync::diff::DiffAction::Delete => ("  X   (Del)", "r"), // Red
             crate::sync::diff::DiffAction::Download => ("<---- (Down)", "c"), // Cyan
             crate::sync::diff::DiffAction::Conflict => ("?? Conflict", "m"), // Magenta
-            crate::sync::diff::DiffAction::Move => ("----> (Mov)", "b"), // Blue
+            crate::sync::diff::DiffAction::Move => ("----> (Mov)", "b"),   // Blue
             crate::sync::diff::DiffAction::CreateDir => ("+DIR+ (New)", "g"), // Green
             crate::sync::diff::DiffAction::Unchanged => {
                 if file.tags.contains(&"target_only".to_string()) {
@@ -297,13 +322,8 @@ async fn cmd_diff_task(
         // 由于 prettytable 的颜色支持比较基础，这里简单处理
         // 如果想支持颜色，可以使用 term 库或者 prettytable 的 color feature
         // 这里直接输出文本
-        
-        table.add_row(row![
-            file.path,
-            source_status,
-            action_str,
-            target_status
-        ]);
+
+        table.add_row(row![file.path, source_status, action_str, target_status]);
     }
 
     table.printstd();
@@ -313,7 +333,7 @@ async fn cmd_diff_task(
 
 fn cmd_generate_completion(shell: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     use clap::CommandFactory;
-    use clap_complete::{generate, Shell};
+    use clap_complete::{Shell, generate};
     use std::io;
 
     let shell_type = match shell.as_deref() {
@@ -534,7 +554,6 @@ struct KeyFile {
 }
 
 fn generate_recovery_code(key: &[u8]) -> String {
-    use base64::Engine;
     use sha2::{Digest, Sha256};
 
     // 计算密钥哈希
@@ -561,7 +580,7 @@ fn generate_recovery_code(key: &[u8]) -> String {
 }
 
 fn cmd_list_tasks(config_manager: &ConfigManager) -> Result<(), Box<dyn std::error::Error>> {
-    use prettytable::{row, Table};
+    use prettytable::{Table, row};
 
     println!("📋 同步任务列表:");
 
@@ -611,7 +630,7 @@ fn cmd_list_tasks(config_manager: &ConfigManager) -> Result<(), Box<dyn std::err
 }
 
 fn cmd_list_accounts(config_manager: &ConfigManager) -> Result<(), Box<dyn std::error::Error>> {
-    use prettytable::{row, Table};
+    use prettytable::{Table, row};
 
     println!("👤 账户列表:");
     let accounts = config_manager.get_accounts();
@@ -623,7 +642,7 @@ fn cmd_list_accounts(config_manager: &ConfigManager) -> Result<(), Box<dyn std::
     }
 
     let mut account_table = Table::new();
-    account_table.add_row(row!["标识","名称", "类型", "状态"]);
+    account_table.add_row(row!["标识", "名称", "类型", "状态"]);
 
     for account in accounts.values() {
         let status = "✅ 已配置";
@@ -770,28 +789,14 @@ async fn cmd_create_task(
 
     // 选择或解析源账户
     let (source_account, source_path) = if let Some(s) = source_str {
-        parse_account_path_or_select(
-            &s,
-            &accounts,
-            &account_list,
-            &account_display,
-            "源",
-        )
-        .await?
+        parse_account_path_or_select(&s, &accounts, &account_list, &account_display, "源").await?
     } else {
         select_account_and_path(&accounts, &account_list, &account_display, "源").await?
     };
 
     // 选择或解析目标账户
     let (target_account, target_path) = if let Some(t) = target_str {
-        parse_account_path_or_select(
-            &t,
-            &accounts,
-            &account_list,
-            &account_display,
-            "目标",
-        )
-        .await?
+        parse_account_path_or_select(&t, &accounts, &account_list, &account_display, "目标").await?
     } else {
         select_account_and_path(&accounts, &account_list, &account_display, "目标").await?
     };
@@ -1280,29 +1285,31 @@ async fn cmd_update_account(
         .ok_or_else(|| format!("未找到账户: {}", id_or_name))?;
 
     let mut account = config_manager.get_account(&id).ok_or("Account not found")?; // Should exist based on find_account_id
-    
+
     let mut updated = false;
     if let Some(n) = name {
         account.name = n;
         updated = true;
     }
-    
+
     if let Some(t) = token {
         // 根据提供商类型更新凭证
-         match account.provider {
+        match account.provider {
             ProviderType::AliYunDrive => {
                 account.credentials.insert("refresh_token".to_string(), t);
             }
-             ProviderType::OneOneFive | ProviderType::Quark => {
-                 account.credentials.insert("cookie".to_string(), t);
-             }
-             _ => {
-                  println!("⚠️  直接更新令牌仅支持基于令牌的提供商 (AliYun, 115, Quark)。对于其他提供商，请重新添加账户或手动编辑配置文件。");
-             }
-         }
-         updated = true;
+            ProviderType::OneOneFive | ProviderType::Quark => {
+                account.credentials.insert("cookie".to_string(), t);
+            }
+            _ => {
+                println!(
+                    "⚠️  直接更新令牌仅支持基于令牌的提供商 (AliYun, 115, Quark)。对于其他提供商，请重新添加账户或手动编辑配置文件。"
+                );
+            }
+        }
+        updated = true;
     }
-    
+
     if updated {
         config_manager.update_account(account)?;
         config_manager.save()?;
@@ -1310,7 +1317,7 @@ async fn cmd_update_account(
     } else {
         println!("ℹ️  未提供更改");
     }
-    
+
     Ok(())
 }
 
@@ -1322,9 +1329,9 @@ async fn cmd_account_status(
         .ok_or_else(|| format!("未找到账户: {}", id_or_name))?;
 
     let account = config_manager.get_account(&id).ok_or("Account not found")?;
-    
+
     println!("🔍 正在检查账户状态: {} ({})", account.name, id);
-    
+
     match verify_account_connection(&account).await {
         Ok(_) => {
             println!("✅ 状态: 在线 / 有效");
@@ -1333,7 +1340,7 @@ async fn cmd_account_status(
             println!("❌ 状态: 错误 - {}", e);
         }
     }
-    
+
     Ok(())
 }
 
@@ -1456,7 +1463,7 @@ async fn cmd_run_task(
     let source_account = config_manager
         .get_account(&task.source_account)
         .ok_or_else(|| format!("源账户不存在: {}", task.source_account))?;
-    
+
     let source_provider = create_provider(&source_account).await?;
     engine.register_provider(task.source_account.clone(), source_provider);
 

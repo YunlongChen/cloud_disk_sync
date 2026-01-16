@@ -1,9 +1,8 @@
 // src/cli/mod.rs
-pub mod info;
 pub mod browse;
+pub mod info;
 
 use clap::{Parser, Subcommand};
-
 
 #[derive(Parser)]
 #[command(name = "cloud-disk-sync")]
@@ -257,15 +256,15 @@ mod tests {
 
     #[test]
     fn test_cli_parse_account_create_positional() {
-        let args = [
-            "cloud-disk-sync",
-            "account",
-            "create",
-            "ali",
-        ];
+        let args = ["cloud-disk-sync", "account", "create", "ali"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Create { name_or_id, name, provider, .. }) => {
+            Commands::Account(AccountCmd::Create {
+                name_or_id,
+                name,
+                provider,
+                ..
+            }) => {
                 assert_eq!(name_or_id, Some("ali".to_string()));
                 assert_eq!(name, None);
                 assert_eq!(provider, None);
@@ -279,7 +278,11 @@ mod tests {
         let args = ["cloud-disk-sync", "account", "remove", "--id", "acc1"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Remove { id, name_or_id, force }) => {
+            Commands::Account(AccountCmd::Remove {
+                id,
+                name_or_id,
+                force,
+            }) => {
                 assert_eq!(id, Some("acc1".to_string()));
                 assert_eq!(name_or_id, None);
                 assert_eq!(force, false);
@@ -290,10 +293,23 @@ mod tests {
 
     #[test]
     fn test_cli_parse_account_update() {
-        let args = ["cloud-disk-sync", "account", "update", "--id", "acc1", "--name", "new_name"];
+        let args = [
+            "cloud-disk-sync",
+            "account",
+            "update",
+            "--id",
+            "acc1",
+            "--name",
+            "new_name",
+        ];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Update { id, name_or_id, name, token }) => {
+            Commands::Account(AccountCmd::Update {
+                id,
+                name_or_id,
+                name,
+                token,
+            }) => {
                 assert_eq!(id, Some("acc1".to_string()));
                 assert_eq!(name_or_id, None);
                 assert_eq!(name, Some("new_name".to_string()));
@@ -308,7 +324,11 @@ mod tests {
         let args = ["cloud-disk-sync", "account", "remove", "my-webdav"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Remove { id, name_or_id, force }) => {
+            Commands::Account(AccountCmd::Remove {
+                id,
+                name_or_id,
+                force,
+            }) => {
                 assert_eq!(id, None);
                 assert_eq!(name_or_id, Some("my-webdav".to_string()));
                 assert_eq!(force, false);
@@ -322,7 +342,11 @@ mod tests {
         let args = ["cloud-disk-sync", "account", "remove", "my-webdav", "-f"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Remove { id, name_or_id, force }) => {
+            Commands::Account(AccountCmd::Remove {
+                id,
+                name_or_id,
+                force,
+            }) => {
                 assert_eq!(id, None);
                 assert_eq!(name_or_id, Some("my-webdav".to_string()));
                 assert_eq!(force, true);
@@ -333,10 +357,22 @@ mod tests {
 
     #[test]
     fn test_cli_parse_account_update_positional() {
-        let args = ["cloud-disk-sync", "account", "update", "my-webdav", "--name", "new_name"];
+        let args = [
+            "cloud-disk-sync",
+            "account",
+            "update",
+            "my-webdav",
+            "--name",
+            "new_name",
+        ];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Update { id, name_or_id, name, token }) => {
+            Commands::Account(AccountCmd::Update {
+                id,
+                name_or_id,
+                name,
+                token,
+            }) => {
                 assert_eq!(id, None);
                 assert_eq!(name_or_id, Some("my-webdav".to_string()));
                 assert_eq!(name, Some("new_name".to_string()));
@@ -364,7 +400,9 @@ mod tests {
         let args = ["cloud-disk-sync", "tasks", "create", "test-task"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Tasks(TaskCmd::Create { name_or_id, name, .. }) => {
+            Commands::Tasks(TaskCmd::Create {
+                name_or_id, name, ..
+            }) => {
                 assert_eq!(name_or_id, Some("test-task".to_string()));
                 assert_eq!(name, None);
             }
@@ -374,10 +412,24 @@ mod tests {
 
     #[test]
     fn test_cli_parse_task_create_full() {
-        let args = ["cloud-disk-sync", "tasks", "create", "test-task", "--source", "acc1", "--target", "acc2"];
+        let args = [
+            "cloud-disk-sync",
+            "tasks",
+            "create",
+            "test-task",
+            "--source",
+            "acc1",
+            "--target",
+            "acc2",
+        ];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Tasks(TaskCmd::Create { name_or_id, source, target, .. }) => {
+            Commands::Tasks(TaskCmd::Create {
+                name_or_id,
+                source,
+                target,
+                ..
+            }) => {
                 assert_eq!(name_or_id, Some("test-task".to_string()));
                 assert_eq!(source, Some("acc1".to_string()));
                 assert_eq!(target, Some("acc2".to_string()));
@@ -391,7 +443,12 @@ mod tests {
         let args = ["cloud-disk-sync", "tasks", "remove", "task_35d"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Tasks(TaskCmd::Remove { id, name_or_id, name, force }) => {
+            Commands::Tasks(TaskCmd::Remove {
+                id,
+                name_or_id,
+                name,
+                force,
+            }) => {
                 assert_eq!(id, None);
                 assert_eq!(name_or_id, Some("task_35d".to_string()));
                 assert_eq!(name, None);
@@ -406,7 +463,12 @@ mod tests {
         let args = ["cloud-disk-sync", "tasks", "remove", "--id", "task_35d"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Tasks(TaskCmd::Remove { id, name_or_id, name, force }) => {
+            Commands::Tasks(TaskCmd::Remove {
+                id,
+                name_or_id,
+                name,
+                force,
+            }) => {
                 assert_eq!(id, Some("task_35d".to_string()));
                 assert_eq!(name_or_id, None);
                 assert_eq!(name, None);
@@ -421,7 +483,12 @@ mod tests {
         let args = ["cloud-disk-sync", "tasks", "remove", "--name", "test-task"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Tasks(TaskCmd::Remove { id, name_or_id, name, force }) => {
+            Commands::Tasks(TaskCmd::Remove {
+                id,
+                name_or_id,
+                name,
+                force,
+            }) => {
                 assert_eq!(id, None);
                 assert_eq!(name_or_id, None);
                 assert_eq!(name, Some("test-task".to_string()));
@@ -436,7 +503,12 @@ mod tests {
         let args = ["cloud-disk-sync", "tasks", "remove", "task_35d", "-f"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Tasks(TaskCmd::Remove { id, name_or_id, name, force }) => {
+            Commands::Tasks(TaskCmd::Remove {
+                id,
+                name_or_id,
+                name,
+                force,
+            }) => {
                 assert_eq!(id, None);
                 assert_eq!(name_or_id, Some("task_35d".to_string()));
                 assert_eq!(name, None);

@@ -157,12 +157,12 @@ impl SyncEngine {
                     // 如果是目录，则创建目录
                     if let Some(src_info) = &file_diff.source_info {
                         if src_info.is_dir {
-                             debug!(path = %file_diff.path, "Creating directory (from Upload action)");
-                             let target_provider =
-                                self.get_provider(&task.target_account)
-                                    .ok_or(SyncError::Provider(ProviderError::NotFound(
-                                        task.target_account.clone(),
-                                    )))?;
+                            debug!(path = %file_diff.path, "Creating directory (from Upload action)");
+                            let target_provider = self.get_provider(&task.target_account).ok_or(
+                                SyncError::Provider(ProviderError::NotFound(
+                                    task.target_account.clone(),
+                                )),
+                            )?;
                             let target_full_path = {
                                 let base_path = std::path::Path::new(&task.target_path);
                                 let rel_path = std::path::Path::new(&file_diff.path);
@@ -202,7 +202,7 @@ impl SyncEngine {
                             )))?;
 
                     let file_size = file_diff.transfer_size();
-                    
+
                     // 通知进度：开始
                     if let Some(ref cb) = progress_callback {
                         cb(SyncProgress {
@@ -232,7 +232,7 @@ impl SyncEngine {
                         Ok(_) => {
                             debug!(file = %file_diff.path, "Sync successful");
                             transferred_size += file_size;
-                            
+
                             // 通知进度：完成
                             if let Some(ref cb) = progress_callback {
                                 let elapsed = start_time.elapsed().as_secs_f64();
@@ -241,14 +241,15 @@ impl SyncEngine {
                                 } else {
                                     0.0
                                 };
-                                
+
                                 cb(SyncProgress {
                                     current_file: file_diff.path.clone(),
                                     current_file_size: file_size,
                                     transferred: transferred_size,
                                     total: total_transfer_size,
                                     percentage: if total_transfer_size > 0 {
-                                        (transferred_size as f64 / total_transfer_size as f64) * 100.0
+                                        (transferred_size as f64 / total_transfer_size as f64)
+                                            * 100.0
                                     } else {
                                         100.0
                                     },
@@ -276,7 +277,7 @@ impl SyncEngine {
                             .ok_or(SyncError::Provider(ProviderError::NotFound(
                                 task.target_account.clone(),
                             )))?;
-                    
+
                     let target_full_path = {
                         let base_path = std::path::Path::new(&task.target_path);
                         let rel_path = std::path::Path::new(&file_diff.path);
@@ -316,7 +317,10 @@ impl SyncEngine {
                         }
                         Err(e) => {
                             error!(path = %file_diff.path, error = %e, "Failed to create directory");
-                            report.errors.push(format!("Failed to create directory {}: {}", file_diff.path, e));
+                            report.errors.push(format!(
+                                "Failed to create directory {}: {}",
+                                file_diff.path, e
+                            ));
                             report.statistics.files_failed += 1;
                         }
                     }
@@ -331,7 +335,6 @@ impl SyncEngine {
         info!(task_id = %task.id, stats = ?report.statistics, "Sync task completed");
         Ok(report)
     }
-
 }
 
 // 进度结构体与结果类型
@@ -612,7 +615,8 @@ impl SyncEngine {
 
         // 辅助函数：将 FileInfo 转换为 FileMetadata
         let to_metadata = |info: &crate::providers::FileInfo| -> crate::sync::diff::FileMetadata {
-            let mut meta = crate::sync::diff::FileMetadata::new(std::path::PathBuf::from(&info.path));
+            let mut meta =
+                crate::sync::diff::FileMetadata::new(std::path::PathBuf::from(&info.path));
             meta.size = info.size;
             meta.modified = info.modified;
             meta.is_dir = info.is_dir;
@@ -667,20 +671,20 @@ impl SyncEngine {
                     let size_match = s.size == t.size;
                     // 修改时间容差 2秒
                     let time_match = (s.modified - t.modified).abs() <= 2;
-                    
+
                     if size_match && time_match {
                         // 认为相同
                         diff.add_file(FileDiff::unchanged(path.clone(), s.clone(), t.clone()));
                     } else {
                         // 不同，需要更新
                         if overwrite_existing {
-                             diff.add_file(FileDiff::update(path.clone(), s.clone(), t.clone()));
+                            diff.add_file(FileDiff::update(path.clone(), s.clone(), t.clone()));
                         } else {
-                             // 不允许覆盖，虽然不同但也标记为 Unchanged (或 Conflict? 视策略而定)
-                             // 这里标记为 Unchanged 但可以加个 Tag 说明被忽略
-                             let mut d = FileDiff::unchanged(path.clone(), s.clone(), t.clone());
-                             d.tags.push("skipped_overwrite".to_string());
-                             diff.add_file(d);
+                            // 不允许覆盖，虽然不同但也标记为 Unchanged (或 Conflict? 视策略而定)
+                            // 这里标记为 Unchanged 但可以加个 Tag 说明被忽略
+                            let mut d = FileDiff::unchanged(path.clone(), s.clone(), t.clone());
+                            d.tags.push("skipped_overwrite".to_string());
+                            diff.add_file(d);
                         }
                     }
                 }
@@ -693,12 +697,21 @@ impl SyncEngine {
                     if delete_orphans {
                         diff.add_file(FileDiff::delete(path.clone(), t.clone()));
                     } else {
-                        let mut d = FileDiff::unchanged(path.clone(), crate::sync::diff::FileMetadata::new(std::path::PathBuf::from(&path)), t.clone());
+                        let mut d = FileDiff::unchanged(
+                            path.clone(),
+                            crate::sync::diff::FileMetadata::new(std::path::PathBuf::from(&path)),
+                            t.clone(),
+                        );
                         // 标记源信息为"空"的元数据是不太准确的，FileDiff::unchanged 需要 source_info
                         // 实际上 FileDiff::new 的 source_info 是 Option。
                         // 但是 FileDiff::unchanged 辅助方法要求 FileMetadata。
                         // 我们直接用 FileDiff::new
-                        d = FileDiff::new(path.clone(), DiffAction::Unchanged, None, Some(t.clone()));
+                        d = FileDiff::new(
+                            path.clone(),
+                            DiffAction::Unchanged,
+                            None,
+                            Some(t.clone()),
+                        );
                         d.tags.push("target_only".to_string());
                         diff.add_file(d);
                     }
