@@ -318,7 +318,7 @@ Address already in use (os error 10048)
 
 如果验证过程中遇到问题：
 
-1. 查看 [测试说明](tests/README.md)
+1. 查看 [测试说明](../tests/README.md)
 2. 查看 [实现总结](WEBDAV_IMPLEMENTATION.md)
 3. 检查 Rust 版本：`rustc --version` (建议 >= 1.70)
 4. 检查 Cargo 版本：`cargo --version`

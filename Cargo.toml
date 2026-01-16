@@ -1,5 +1,5 @@
 [package]
-name = "cloud_disk_sync"
+name = "cloud-disk-sync"
 version = "0.1.0"
 edition = "2024"
 

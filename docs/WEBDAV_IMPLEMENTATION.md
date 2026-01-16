@@ -342,8 +342,8 @@ cargo doc --no-deps --open
 ## 📚 相关文档
 
 - [WebDAV RFC 4918](https://tools.ietf.org/html/rfc4918)
-- [测试说明](./tests/README.md)
-- [使用文档](./docs/WEBDAV_USAGE.md)
+- [测试说明](../tests/README.md)
+- [使用文档](WEBDAV_USAGE.md)
 
 ## 🙏 致谢
 
