@@ -22,35 +22,39 @@ pub struct Cli {
 pub enum Commands {
     /// Account management commands
     #[command(subcommand)]
-    Account(AccountCmd),
+    Accounts(AccountCmd),
 
     /// Task management commands
     #[command(subcommand)]
     Tasks(TaskCmd),
 
-    /// Run a sync task
+    /// Run a synchronization task
     Run {
-        #[arg(short, long)]
+        /// ID of the task to run
+        #[arg(long)]
         task: String,
 
-        #[arg(short, long)]
+        /// Dry run mode (don't actually sync files)
+        #[arg(long)]
         dry_run: bool,
 
-        #[arg(short, long)]
-        resume: bool,
-
-        /// Disable progress bar output
+        /// Disable progress bar (suitable for scripts)
         #[arg(long)]
         no_progress: bool,
     },
 
-    /// Show sync report
+    /// View sync reports
     Report {
-        #[arg(short, long)]
+        /// ID of the task
+        #[arg(long)]
         task: String,
 
-        #[arg(short, long)]
-        detailed: bool,
+        /// Report ID to view details (optional)
+        #[arg(long)]
+        report_id: Option<String>,
+
+        #[command(subcommand)]
+        command: Option<ReportCommands>,
     },
 
     /// Verify data integrity
@@ -93,6 +97,20 @@ pub enum Commands {
 
     /// Show system and program info
     Info,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ReportCommands {
+    /// List reports for a task
+    List {
+        /// Page number (default: 0)
+        #[arg(long, default_value = "0")]
+        page: usize,
+
+        /// Items per page (default: 20)
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -241,7 +259,7 @@ mod tests {
     fn test_cli_parse_account_create() {
         let args = [
             "cloud-disk-sync",
-            "account",
+            "accounts",
             "create",
             "--name",
             "ali",
@@ -250,7 +268,7 @@ mod tests {
         ];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Create { name, provider, .. }) => {
+            Commands::Accounts(AccountCmd::Create { name, provider, .. }) => {
                 assert_eq!(name, Some("ali".to_string()));
                 assert_eq!(provider, Some("aliyun".to_string()));
             }
@@ -260,10 +278,10 @@ mod tests {
 
     #[test]
     fn test_cli_parse_account_create_positional() {
-        let args = ["cloud-disk-sync", "account", "create", "ali"];
+        let args = ["cloud-disk-sync", "accounts", "create", "ali"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Create {
+            Commands::Accounts(AccountCmd::Create {
                 name_or_id,
                 name,
                 provider,
@@ -279,10 +297,10 @@ mod tests {
 
     #[test]
     fn test_cli_parse_account_remove() {
-        let args = ["cloud-disk-sync", "account", "remove", "--id", "acc1"];
+        let args = ["cloud-disk-sync", "accounts", "remove", "--id", "acc1"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Remove {
+            Commands::Accounts(AccountCmd::Remove {
                 id,
                 name_or_id,
                 force,
@@ -299,7 +317,7 @@ mod tests {
     fn test_cli_parse_account_update() {
         let args = [
             "cloud-disk-sync",
-            "account",
+            "accounts",
             "update",
             "--id",
             "acc1",
@@ -308,7 +326,7 @@ mod tests {
         ];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Update {
+            Commands::Accounts(AccountCmd::Update {
                 id,
                 name_or_id,
                 name,
@@ -325,10 +343,10 @@ mod tests {
 
     #[test]
     fn test_cli_parse_account_remove_positional() {
-        let args = ["cloud-disk-sync", "account", "remove", "my-webdav"];
+        let args = ["cloud-disk-sync", "accounts", "remove", "my-webdav"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Remove {
+            Commands::Accounts(AccountCmd::Remove {
                 id,
                 name_or_id,
                 force,
@@ -343,10 +361,10 @@ mod tests {
 
     #[test]
     fn test_cli_parse_account_remove_force() {
-        let args = ["cloud-disk-sync", "account", "remove", "my-webdav", "-f"];
+        let args = ["cloud-disk-sync", "accounts", "remove", "my-webdav", "-f"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Remove {
+            Commands::Accounts(AccountCmd::Remove {
                 id,
                 name_or_id,
                 force,
@@ -363,7 +381,7 @@ mod tests {
     fn test_cli_parse_account_update_positional() {
         let args = [
             "cloud-disk-sync",
-            "account",
+            "accounts",
             "update",
             "my-webdav",
             "--name",
@@ -371,7 +389,7 @@ mod tests {
         ];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Update {
+            Commands::Accounts(AccountCmd::Update {
                 id,
                 name_or_id,
                 name,
@@ -388,10 +406,10 @@ mod tests {
 
     #[test]
     fn test_cli_parse_account_status_positional() {
-        let args = ["cloud-disk-sync", "account", "status", "my-webdav"];
+        let args = ["cloud-disk-sync", "accounts", "status", "my-webdav"];
         let cli = Cli::parse_from(&args);
         match cli.command {
-            Commands::Account(AccountCmd::Status { id, name_or_id }) => {
+            Commands::Accounts(AccountCmd::Status { id, name_or_id }) => {
                 assert_eq!(id, None);
                 assert_eq!(name_or_id, Some("my-webdav".to_string()));
             }

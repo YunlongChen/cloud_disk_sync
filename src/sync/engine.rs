@@ -2,7 +2,7 @@ use crate::config::SyncPolicy;
 use crate::config::{DiffMode, SyncTask};
 use crate::encryption::EncryptionManager;
 use crate::error::{ProviderError, SyncError};
-use crate::providers::StorageProvider;
+use crate::providers::{FileInfo, StorageProvider};
 use crate::report::{FileOperation, SyncReport};
 use crate::sync::diff::{ChecksumType, DiffAction, DiffResult, FileDiff};
 use dashmap::DashMap;
@@ -19,7 +19,7 @@ pub struct SyncEngine {
     diff_cache: DashMap<String, FileDiff>,
     resume_store: Arc<Mutex<Connection>>,
     /// 扫描缓存：key -> (列表快照, 上次扫描时间)
-    scan_cache: DashMap<String, (Vec<crate::providers::FileInfo>, SystemTime)>,
+    scan_cache: DashMap<String, (Vec<FileInfo>, SystemTime)>,
 }
 
 impl SyncEngine {
@@ -46,6 +46,25 @@ impl SyncEngine {
                 status TEXT NOT NULL,
                 PRIMARY KEY (task_id, file_path)
             )",
+            [],
+        )?;
+
+        // 创建报告表
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sync_reports (
+                report_id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                start_time INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                duration_seconds INTEGER NOT NULL,
+                details_json TEXT NOT NULL
+            )",
+            [],
+        )?;
+
+        // 创建索引以加速查询
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reports_task_id ON sync_reports(task_id)",
             [],
         )?;
 
@@ -115,8 +134,7 @@ impl SyncEngine {
         F: Fn(SyncProgress) + Send + Sync + 'static,
     {
         info!(task_id = %task.id, "Starting sync task: {}", task.name);
-        let mut report = SyncReport::new();
-        report.task_id = task.id.clone();
+        let mut report = SyncReport::new(&task.id);
 
         // 计算文件差异（限定借用作用域）
         let diff = {
@@ -166,7 +184,10 @@ impl SyncEngine {
                             let target_full_path = {
                                 let base_path = std::path::Path::new(&task.target_path);
                                 let rel_path = std::path::Path::new(&file_diff.path);
-                                base_path.join(rel_path).to_string_lossy().replace('\\', "/")
+                                base_path
+                                    .join(rel_path)
+                                    .to_string_lossy()
+                                    .replace('\\', "/")
                             };
                             match target_provider.mkdir(&target_full_path).await {
                                 Ok(_) => {
@@ -282,7 +303,10 @@ impl SyncEngine {
                     let target_full_path = {
                         let base_path = std::path::Path::new(&task.target_path);
                         let rel_path = std::path::Path::new(&file_diff.path);
-                        base_path.join(rel_path).to_string_lossy().replace('\\', "/")
+                        base_path
+                            .join(rel_path)
+                            .to_string_lossy()
+                            .replace('\\', "/")
                     };
 
                     match target_provider.delete(&target_full_path).await {
@@ -310,7 +334,10 @@ impl SyncEngine {
                     let target_full_path = {
                         let base_path = std::path::Path::new(&task.target_path);
                         let rel_path = std::path::Path::new(&file_diff.path);
-                        base_path.join(rel_path).to_string_lossy().replace('\\', "/")
+                        base_path
+                            .join(rel_path)
+                            .to_string_lossy()
+                            .replace('\\', "/")
                     };
                     match target_provider.mkdir(&target_full_path).await {
                         Ok(_) => {
@@ -338,6 +365,11 @@ impl SyncEngine {
         let duration = start_time.elapsed().as_secs_f64();
         report.statistics.finalize(duration);
         report.duration_seconds = duration as i64;
+
+        // 保存报告到数据库
+        if let Err(e) = self.save_report(&report) {
+            error!(error = %e, "Failed to save sync report to database");
+        }
 
         info!(task_id = %task.id, stats = ?report.statistics, "Sync task completed");
         Ok(report)
@@ -488,6 +520,76 @@ impl SyncEngine {
         )
         .await
     }
+
+    /// 保存同步报告到数据库
+    pub fn save_report(&self, report: &SyncReport) -> Result<(), SyncError> {
+        let conn = self.resume_store.lock().unwrap();
+        let report_id = uuid::Uuid::new_v4().to_string();
+        let json = serde_json::to_string(report).map_err(|e| SyncError::Unknown(e.to_string()))?;
+
+        conn.execute(
+            "INSERT INTO sync_reports (report_id, task_id, start_time, status, duration_seconds, details_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                report_id,
+                report.task_id,
+                report.start_time.timestamp(),
+                format!("{:?}", report.status),
+                report.duration_seconds,
+                json
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// 获取任务的报告列表
+    pub fn list_reports(
+        &self,
+        task_id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<(String, i64, String, i64)>, SyncError> {
+        let conn = self.resume_store.lock().unwrap();
+        // 构造 SQL 查询
+        let mut stmt = conn.prepare(
+            "SELECT report_id, start_time, status, duration_seconds 
+             FROM sync_reports 
+             WHERE task_id = ?1 
+             ORDER BY start_time DESC 
+             LIMIT ?2 OFFSET ?3",
+        )?;
+
+        // 将 usize 转换为 i64，以满足 ToSql trait (SQLite INTEGER is i64)
+        let limit_i64 = limit as i64;
+        let offset_i64 = offset as i64;
+
+        let report_iter = stmt.query_map(params![task_id, limit_i64, offset_i64], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?;
+
+        let mut reports = Vec::new();
+        for report in report_iter {
+            reports.push(report?);
+        }
+        Ok(reports)
+    }
+
+    /// 获取特定报告详情
+    pub fn get_report(&self, report_id: &str) -> Result<SyncReport, SyncError> {
+        let conn = self.resume_store.lock().unwrap();
+        let mut stmt =
+            conn.prepare("SELECT details_json FROM sync_reports WHERE report_id = ?1")?;
+
+        let mut rows = stmt.query(params![report_id])?;
+        if let Some(row) = rows.next()? {
+            let json: String = row.get(0)?;
+            let report: SyncReport =
+                serde_json::from_str(&json).map_err(|e| SyncError::Unknown(e.to_string()))?;
+            Ok(report)
+        } else {
+            Err(SyncError::Unknown("Report not found".to_string()))
+        }
+    }
 }
 
 impl SyncEngine {
@@ -495,7 +597,7 @@ impl SyncEngine {
         &self,
         provider: &dyn StorageProvider,
         path: &str,
-    ) -> Result<Vec<crate::providers::FileInfo>, SyncError> {
+    ) -> Result<Vec<FileInfo>, SyncError> {
         let max_retries = 3;
         let mut last_error = SyncError::Unknown("Initial".to_string());
 
@@ -517,7 +619,7 @@ impl SyncEngine {
         &self,
         provider: &dyn StorageProvider,
         root: &str,
-    ) -> Result<Vec<crate::providers::FileInfo>, SyncError> {
+    ) -> Result<Vec<FileInfo>, SyncError> {
         let mut result = Vec::new();
         let mut stack = vec![root.to_string()];
 
@@ -621,7 +723,7 @@ impl SyncEngine {
         };
 
         // 辅助函数：将 FileInfo 转换为 FileMetadata
-        let to_metadata = |info: &crate::providers::FileInfo| -> crate::sync::diff::FileMetadata {
+        let to_metadata = |info: &FileInfo| -> crate::sync::diff::FileMetadata {
             let mut meta =
                 crate::sync::diff::FileMetadata::new(std::path::PathBuf::from(&info.path));
             meta.size = info.size;
@@ -742,7 +844,10 @@ impl SyncEngine {
         let join_path = |base: &str, rel: &str| -> String {
             let base_path = std::path::Path::new(base);
             let rel_path = std::path::Path::new(rel);
-            base_path.join(rel_path).to_string_lossy().replace('\\', "/")
+            base_path
+                .join(rel_path)
+                .to_string_lossy()
+                .replace('\\', "/")
         };
 
         let source_full_path = join_path(&task.source_path, &file_diff.path);

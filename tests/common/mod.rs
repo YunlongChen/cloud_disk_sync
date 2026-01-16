@@ -358,13 +358,13 @@ pub async fn start_mock_server_with_seed(seed: Vec<(&str, &str, bool)>) -> (Sock
                         } else {
                             path_str.clone()
                         };
-                         // Make sure href always has a leading slash
+                        // Make sure href always has a leading slash
                         let self_href_path = if !self_href.starts_with('/') {
-                             format!("/{}", self_href)
+                            format!("/{}", self_href)
                         } else {
-                             self_href
+                            self_href
                         };
-                        
+
                         // Remove double slash if present (e.g. //file.txt)
                         let self_href_path = self_href_path.replace("//", "/");
 
@@ -401,11 +401,11 @@ pub async fn start_mock_server_with_seed(seed: Vec<(&str, &str, bool)>) -> (Sock
                                             };
                                             // Make sure href always has a leading slash if p doesn't (though p usually does)
                                             let href_path = if !href.starts_with('/') {
-                                                 format!("/{}", href)
+                                                format!("/{}", href)
                                             } else {
-                                                 href
+                                                href
                                             };
-                                            
+
                                             // Remove double slash if present (e.g. //file.txt)
                                             let href_path = href_path.replace("//", "/");
 

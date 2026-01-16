@@ -1,3 +1,4 @@
+use crate::config::SyncTask;
 use crate::error::SyncError;
 use crate::sync::diff::{DiffAction, FileDiff};
 use crate::utils::format_bytes;
@@ -6,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SyncReport {
     pub task_id: String,
     pub start_time: DateTime<Utc>,
@@ -57,9 +58,9 @@ impl SyncReport {
 }
 
 impl SyncReport {
-    pub fn new() -> SyncReport {
+    pub fn new(task_id: &str) -> SyncReport {
         SyncReport {
-            task_id: "".into(),
+            task_id: task_id.into(),
             start_time: Default::default(),
             end_time: None,
             status: SyncStatus::Success,

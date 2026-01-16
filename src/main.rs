@@ -9,24 +9,24 @@ mod report;
 mod sync;
 mod utils;
 
-use crate::{
-    cli::Cli,
-    config::{
-        AccountConfig, ConfigManager, ProviderType, RateLimitConfig, RetryPolicy, Schedule,
-        SyncTask,
-    },
-    encryption::types::{EncryptionAlgorithm, IvMode},
-    sync::engine::SyncEngine,
-    utils::format_bytes,
-};
-// 移除未解析的类型导入，直接使用方法返回推断类型
-use aes_gcm::aead::Aead;
+use crate::cli::{AccountCmd, Cli, Commands, ReportCommands, TaskCmd};
+use crate::config::{AccountConfig, ConfigManager, SyncTask};
+use crate::sync::engine::SyncEngine;
+use crate::utils::format_bytes;
 use clap::Parser;
-use cli::Commands;
+use dialoguer::{Select, theme::ColorfulTheme};
+use prettytable::{Table, row};
+
+// Added missing imports to fix compilation errors
+use crate::config::{
+    DiffMode, EncryptionConfig, FilterRule, ProviderType, RateLimitConfig, RetryPolicy, Schedule,
+    SyncPolicy,
+};
+use crate::encryption::types::{EncryptionAlgorithm, IvMode};
+use crate::providers::{AliYunDriveProvider, StorageProvider, WebDavProvider};
+use aes_gcm::aead::Aead;
 use rand::{Rng, rng};
 use std::fs;
-use tracing::info;
-use tracing_subscriber;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -40,13 +40,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Run {
             task,
             dry_run,
-            resume,
             no_progress,
         } => {
-            cmd_run_task(&config_manager, &task, dry_run, resume, no_progress).await?;
+            // resume parameter removed as per cli definition update
+            cmd_run_task(&config_manager, &task, dry_run, false, no_progress).await?;
         }
-        Commands::Account(cmd) => match cmd {
-            cli::AccountCmd::Create {
+        Commands::Report {
+            task,
+            report_id,
+            command,
+        } => {
+            cmd_report(&task, report_id.as_deref(), &command, false).await?;
+        }
+        Commands::Accounts(cmd) => match cmd {
+            AccountCmd::Create {
                 name_or_id,
                 name,
                 provider,
@@ -59,10 +66,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let provider_val = provider.unwrap_or_default();
                 cmd_add_account(&mut config_manager, account_name, provider_val, token).await?;
             }
-            cli::AccountCmd::List => {
+            AccountCmd::List => {
                 cmd_list_accounts(&config_manager)?;
             }
-            cli::AccountCmd::Remove {
+            AccountCmd::Remove {
                 id,
                 name_or_id,
                 force,
@@ -72,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or("必须提供账户ID或名称 (使用 --id 或直接提供名称)")?;
                 cmd_remove_account(&mut config_manager, &target_id, force)?;
             }
-            cli::AccountCmd::Update {
+            AccountCmd::Update {
                 id,
                 name_or_id,
                 name,
@@ -83,13 +90,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or("必须提供账户ID或名称 (使用 --id 或直接提供名称)")?;
                 cmd_update_account(&mut config_manager, &target_id, name, token).await?;
             }
-            cli::AccountCmd::Status { id, name_or_id } => {
+            AccountCmd::Status { id, name_or_id } => {
                 let target_id = name_or_id
                     .or(id)
                     .ok_or("必须提供账户ID或名称 (使用 --id 或直接提供名称)")?;
                 cmd_account_status(&config_manager, &target_id).await?;
             }
-            cli::AccountCmd::Browse {
+            AccountCmd::Browse {
                 id,
                 name_or_id,
                 path,
@@ -105,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         Commands::Tasks(cmd) => match cmd {
-            cli::TaskCmd::Create {
+            TaskCmd::Create {
                 name_or_id,
                 name,
                 source,
@@ -124,10 +131,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .await?;
             }
-            cli::TaskCmd::List => {
+            TaskCmd::List => {
                 cmd_list_tasks(&config_manager)?;
             }
-            cli::TaskCmd::Remove {
+            TaskCmd::Remove {
                 id,
                 name_or_id,
                 name,
@@ -141,9 +148,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cmd_remove_task(&mut config_manager, &target_id, force)?;
             }
         },
-        Commands::Report { task, detailed } => {
-            cmd_generate_report(&task, detailed)?;
-        }
         Commands::Verify { task, all } => {
             cmd_verify_integrity(&task, all).await?;
         }
@@ -192,9 +196,6 @@ async fn cmd_browse_account(
 
     Ok(())
 }
-
-// Remove cmd_info function
-use crate::providers::{AliYunDriveProvider, StorageProvider, WebDavProvider};
 
 async fn create_provider(
     account: &AccountConfig,
@@ -301,7 +302,7 @@ async fn cmd_diff_task(
             "-".to_string()
         };
 
-        let (action_str, color) = match file.action {
+        let (action_str, _color) = match file.action {
             crate::sync::diff::DiffAction::Upload => ("----> (New)", "g"), // Green
             crate::sync::diff::DiffAction::Update => ("----> (Upd)", "y"), // Yellow
             crate::sync::diff::DiffAction::Delete => ("  X   (Del)", "r"), // Red
@@ -434,8 +435,106 @@ async fn cmd_verify_integrity(
     Ok(())
 }
 
-fn cmd_generate_report(task: &String, show_detail: bool) -> Result<(), Box<dyn std::error::Error>> {
-    todo!()
+async fn cmd_report(
+    task_id: &str,
+    report_id: Option<&str>,
+    command: &Option<ReportCommands>,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let engine = SyncEngine::new().await?;
+
+    // 如果指定了 report_id，直接显示详情
+    if let Some(rid) = report_id {
+        let report = engine.get_report(rid)?;
+        if json_output {
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        } else {
+            println!("{}", report.statistics.detailed_report());
+        }
+        return Ok(());
+    }
+
+    // 处理子命令
+    if let Some(cmd) = command {
+        match cmd {
+            ReportCommands::List { page, limit } => {
+                let reports = engine.list_reports(task_id, *limit, page * limit)?;
+
+                if json_output {
+                    // JSON 输出需要构造一个结构
+                    let json_reports: Vec<serde_json::Value> = reports.iter().map(|(id, start, status, duration)| {
+                        serde_json::json!({
+                            "report_id": id,
+                            "start_time": chrono::DateTime::from_timestamp(*start, 0).unwrap().to_rfc3339(),
+                            "status": status,
+                            "duration_seconds": duration
+                        })
+                    }).collect();
+                    println!("{}", serde_json::to_string_pretty(&json_reports)?);
+                } else {
+                    let mut table = Table::new();
+                    table.set_format(*prettytable::format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
+                    table.add_row(row!["Report ID", "Time", "Status", "Duration"]);
+
+                    for (id, start, status, duration) in reports {
+                        let time_str = chrono::DateTime::from_timestamp(start, 0)
+                            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                            .unwrap_or_else(|| "Unknown".to_string());
+
+                        table.add_row(row![id, time_str, status, format!("{}s", duration)]);
+                    }
+                    table.printstd();
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    // 交互模式：列出最近的报告供选择
+    if !json_output {
+        let reports = engine.list_reports(task_id, 20, 0)?;
+        if reports.is_empty() {
+            println!("No reports found for task: {}", task_id);
+            return Ok(());
+        }
+
+        let items: Vec<String> = reports
+            .iter()
+            .map(|(id, start, status, duration)| {
+                let time_str = chrono::DateTime::from_timestamp(*start, 0)
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                format!("{} - {} ({}) - {}s", time_str, status, id, duration)
+            })
+            .collect();
+
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Select a report to view details")
+            .default(0)
+            .items(&items)
+            .interact()?;
+
+        let (selected_id, _, _, _) = &reports[selection];
+        let report = engine.get_report(selected_id)?;
+        println!("{}", report.statistics.detailed_report());
+    } else {
+        // JSON 模式下如果不提供子命令，默认列出第一页
+        let reports = engine.list_reports(task_id, 20, 0)?;
+        let json_reports: Vec<serde_json::Value> = reports
+            .iter()
+            .map(|(id, start, status, duration)| {
+                serde_json::json!({
+                    "report_id": id,
+                    "start_time": chrono::DateTime::from_timestamp(*start, 0).unwrap().to_rfc3339(),
+                    "status": status,
+                    "duration_seconds": duration
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&json_reports)?);
+    }
+
+    Ok(())
 }
 
 fn cmd_generate_key(
@@ -624,7 +723,6 @@ fn cmd_list_tasks(config_manager: &ConfigManager) -> Result<(), Box<dyn std::err
 
         // 辅助函数：截断字符串 (UTF-8 安全)
         let truncate = |s: &str, max_width: usize| -> String {
-            use unicode_width::UnicodeWidthStr;
             let mut width = 0;
             let mut result = String::new();
             for c in s.chars() {
@@ -686,7 +784,7 @@ fn cmd_list_accounts(config_manager: &ConfigManager) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-fn get_task_status(task: &SyncTask) -> String {
+fn get_task_status(_task: &SyncTask) -> String {
     // 这里可以检查任务上次执行时间、是否启用等
     // 简化实现，总是返回就绪
     "✅ 就绪".to_string()
@@ -785,8 +883,6 @@ async fn cmd_create_task(
     schedule_str: Option<String>,
     encrypt: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use crate::config::EncryptionConfig;
-    use crate::config::{DiffMode, FilterRule, Schedule, SyncPolicy, SyncTask};
     use dialoguer::{Input, Select};
 
     println!("🔄 创建新的同步任务...");
@@ -1063,7 +1159,6 @@ async fn cmd_add_account(
     provider_str: String,
     token: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use crate::config::ProviderType;
     use dialoguer::{Input, Password};
     use std::collections::HashMap;
 
@@ -1129,24 +1224,24 @@ async fn cmd_add_account(
         }
         // ProviderType::SMB => {
         //     println!("📝 添加 SMB 共享账户");
-
+        //
         //     let server = Input::<String>::new()
         //         .with_prompt("服务器地址 (例如: 192.168.1.100 或 hostname)")
         //         .interact_text()?;
-
+        //
         //     let share = Input::<String>::new()
         //         .with_prompt("共享名称")
         //         .interact_text()?;
-
+        //
         //     let username = Input::<String>::new()
         //         .with_prompt("用户名 (可选)")
         //         .allow_empty(true)
         //         .interact_text()?;
-
+        //
         //     let password = Password::new()
         //         .with_prompt("密码 (可选)")
         //         .interact()?;
-
+        //
         //     credentials.insert("server".to_string(), server);
         //     credentials.insert("share".to_string(), share);
         //     if !username.is_empty() {
@@ -1263,19 +1358,7 @@ async fn cmd_add_account(
 }
 
 fn find_account_id(config_manager: &ConfigManager, id_or_name: &str) -> Option<String> {
-    // 尝试直接作为 ID 查找
-    if config_manager.get_account(id_or_name).is_some() {
-        return Some(id_or_name.to_string());
-    }
-
-    // 尝试作为名称查找
-    for account in config_manager.get_accounts().values() {
-        if account.name == id_or_name {
-            return Some(account.id.clone());
-        }
-    }
-
-    None
+    find_account_id_internal(config_manager.get_accounts(), id_or_name)
 }
 
 fn cmd_remove_account(
@@ -1286,10 +1369,34 @@ fn cmd_remove_account(
     let id = find_account_id(config_manager, id_or_name)
         .ok_or_else(|| format!("未找到账户: {}", id_or_name))?;
 
-    // 确认删除
+    let account = config_manager
+        .get_account(&id)
+        .ok_or_else(|| format!("账户不存在: {}", id))?;
+
+    let account_name = account.name.clone();
+
+    // Check if any tasks are using this account
+    let tasks = config_manager.get_tasks();
+    let mut used_by = Vec::new();
+    for task in tasks.values() {
+        if task.source_account == id || task.target_account == id {
+            used_by.push(format!("{} ({})", task.name, task.id));
+        }
+    }
+
+    if !used_by.is_empty() {
+        eprintln!("⚠️  该账户正在被以下任务使用:");
+        for task in used_by {
+            eprintln!("  - {}", task);
+        }
+        return Err("无法删除: 账户正在使用中".into());
+    }
+
+    let confirm_msg = format!("确定要删除账户 '{}' (ID: {}) 吗?", account_name, id);
+
     if force
         || dialoguer::Confirm::new()
-            .with_prompt(format!("确定要删除账户 '{}' (ID: {}) 吗?", id_or_name, id))
+            .with_prompt(confirm_msg)
             .default(false)
             .interact()?
     {
@@ -1305,44 +1412,57 @@ fn cmd_remove_account(
 async fn cmd_update_account(
     config_manager: &mut ConfigManager,
     id_or_name: &str,
-    name: Option<String>,
-    token: Option<String>,
+    new_name: Option<String>,
+    new_token: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let id = find_account_id(config_manager, id_or_name)
         .ok_or_else(|| format!("未找到账户: {}", id_or_name))?;
 
-    let mut account = config_manager.get_account(&id).ok_or("Account not found")?; // Should exist based on find_account_id
+    let mut account = config_manager
+        .get_account(&id)
+        .ok_or_else(|| format!("账户不存在: {}", id))?
+        .clone();
 
-    let mut updated = false;
-    if let Some(n) = name {
-        account.name = n;
-        updated = true;
+    let mut changed = false;
+
+    if let Some(name) = new_name {
+        println!("重命名账户: {} -> {}", account.name, name);
+        account.name = name;
+        changed = true;
     }
 
-    if let Some(t) = token {
-        // 根据提供商类型更新凭证
+    if let Some(ref token) = new_token {
+        println!("更新账户凭证...");
         match account.provider {
             ProviderType::AliYunDrive => {
-                account.credentials.insert("refresh_token".to_string(), t);
+                account
+                    .credentials
+                    .insert("refresh_token".to_string(), token.clone());
             }
             ProviderType::OneOneFive | ProviderType::Quark => {
-                account.credentials.insert("cookie".to_string(), t);
+                account
+                    .credentials
+                    .insert("cookie".to_string(), token.clone());
             }
             _ => {
-                println!(
-                    "⚠️  直接更新令牌仅支持基于令牌的提供商 (AliYun, 115, Quark)。对于其他提供商，请重新添加账户或手动编辑配置文件。"
-                );
+                return Err("当前仅支持更新阿里云盘、115和夸克网盘的 Token/Cookie".into());
             }
         }
-        updated = true;
+        changed = true;
     }
 
-    if updated {
-        config_manager.update_account(account)?;
+    if changed {
+        if new_token.is_some() {
+            println!("🔗 正在验证新凭证...");
+            verify_account_connection(&account).await?;
+            println!("✅ 验证成功!");
+        }
+
+        config_manager.add_account(account)?;
         config_manager.save()?;
-        println!("✅ 账户已更新: {}", id);
+        println!("✅ 账户已更新");
     } else {
-        println!("ℹ️  未提供更改");
+        println!("ℹ️  没有变更");
     }
 
     Ok(())
@@ -1355,16 +1475,20 @@ async fn cmd_account_status(
     let id = find_account_id(config_manager, id_or_name)
         .ok_or_else(|| format!("未找到账户: {}", id_or_name))?;
 
-    let account = config_manager.get_account(&id).ok_or("Account not found")?;
+    let account = config_manager
+        .get_account(&id)
+        .ok_or_else(|| format!("账户不存在: {}", id))?;
 
     println!("🔍 正在检查账户状态: {} ({})", account.name, id);
+    println!("   类型: {:?}", account.provider);
 
     match verify_account_connection(&account).await {
         Ok(_) => {
-            println!("✅ 状态: 在线 / 有效");
+            println!("✅ 状态: 正常 (连接成功)");
         }
         Err(e) => {
-            println!("❌ 状态: 错误 - {}", e);
+            println!("❌ 状态: 异常 (连接失败)");
+            println!("   错误: {}", e);
         }
     }
 
@@ -1374,113 +1498,16 @@ async fn cmd_account_status(
 async fn verify_account_connection(
     account: &AccountConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // 根据提供商类型创建客户端并测试连接
-    match account.provider {
-        ProviderType::AliYunDrive => verify_aliyun_account(account).await,
-        ProviderType::WebDAV => verify_webdav_account(account).await,
-        // ProviderType::SMB => verify_smb_account(account).await,
-        _ => Ok(()), // 其他提供商暂不验证
-    }
-}
-
-async fn verify_aliyun_account(account: &AccountConfig) -> Result<(), Box<dyn std::error::Error>> {
-    use reqwest::Client;
-
-    let refresh_token = account
-        .credentials
-        .get("refresh_token")
-        .ok_or("缺少 refresh_token")?;
-
-    let client = Client::new();
-
-    // 测试获取访问令牌
-    let response = client
-        .post("https://auth.aliyundrive.com/v2/account/token")
-        .json(&serde_json::json!({
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-        }))
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        return Err(format!("令牌获取失败: {}", response.status()).into());
-    }
-
+    let provider = create_provider(account).await?;
+    let _ = provider.list("/").await?;
     Ok(())
 }
-
-async fn verify_webdav_account(account: &AccountConfig) -> Result<(), Box<dyn std::error::Error>> {
-    use base64::Engine;
-    use reqwest::Client;
-
-    info!("正在验证 webdav 账户");
-
-    let url = account.credentials.get("url").ok_or("缺少 URL")?;
-    let username = account.credentials.get("username").ok_or("缺少用户名")?;
-    let password = account.credentials.get("password").ok_or("缺少密码")?;
-
-    let client = Client::new();
-
-    // 发送 PROPFIND 请求测试连接
-    let response = client
-        .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), url)
-        .header("Depth", "0")
-        .header(
-            "Authorization",
-            format!(
-                "Basic {}",
-                base64::engine::general_purpose::STANDARD
-                    .encode(format!("{}:{}", username, password))
-            ),
-        )
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        return Err(format!("WebDAV 连接失败: {}", response.status()).into());
-    }
-
-    Ok(())
-}
-
-// use smb::{Client, ClientConfig, ReadAtChannel};
-
-// async fn verify_smb_account(account: &AccountConfig) -> Result<(), Box<dyn std::error::Error>> {
-//     let server = account.credentials.get("server")
-//         .ok_or("缺少服务器地址")?;
-//     let share_name = account.credentials.get("share")
-//         .ok_or("缺少共享名称")?;
-
-//     let client = Client::new(ClientConfig::default());
-
-//     if let Some(username) = account.credentials.get("username") {
-//         // connection.set_username(username);
-//     }
-
-//     if let Some(password) = account.credentials.get("password") {
-//         // connection.set_password(password);
-//     }
-
-//     let arc = client.connect("").await?.connect().await?;
-
-//     // 尝试连接
-
-//     let shares = client.list_shares("")?;
-
-//     // 检查指定的共享是否存在
-//     if !shares.iter().any(|s| s.name() == share_name) {
-//         return Err(format!("共享 '{}' 不存在", share_name).into());
-//     }
-
-//     Ok(())
-// }
 
 async fn cmd_run_task(
     config_manager: &ConfigManager,
     task_id: &str,
     dry_run: bool,
-    resume: bool,
+    _resume: bool,
     no_progress: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let task = config_manager.get_task(task_id).ok_or("Task not found")?;
@@ -1695,7 +1722,7 @@ async fn cmd_run_task(
             println!("\n📊 同步报告:");
             use prettytable::{Table, format, row};
             let mut table = Table::new();
-            table.set_format(*format::consts::FORMAT_NO_TITLE);
+            table.set_format(*format::consts::FORMAT_BOX_CHARS);
 
             table.add_row(row![
                 "Total Files",

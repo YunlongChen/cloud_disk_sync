@@ -395,7 +395,7 @@ impl SchedulerManager {
             // TODO: 从配置管理器获取同步任务
             // let task = config_manager.get_task(sync_task_id)?;
             // sync_engine.sync(&task).await
-            Ok::<SyncReport, SyncError>(SyncReport::new())
+            Ok::<SyncReport, SyncError>(SyncReport::new(sync_task_id))
         })
         .catch_unwind()
         .await;
