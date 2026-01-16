@@ -4,7 +4,7 @@ pub mod webdav;
 pub use aliyun::AliYunDriveProvider;
 pub use webdav::WebDavProvider;
 
-use crate::config::RateLimitConfig;
+use crate::config::{AccountConfig, ProviderType, RateLimitConfig};
 use crate::core::rate_limit::TokenBucketRateLimiter;
 use crate::core::traits::RateLimiter;
 use crate::error::SyncError;
@@ -27,6 +27,22 @@ pub trait StorageProvider: Send + Sync {
     async fn mkdir(&self, path: &str) -> Result<(), SyncError>;
     async fn stat(&self, path: &str) -> Result<FileInfo, SyncError>;
     async fn exists(&self, path: &str) -> Result<bool, SyncError>;
+}
+
+pub async fn create_provider(
+    account: &AccountConfig,
+) -> Result<Box<dyn StorageProvider>, Box<dyn std::error::Error>> {
+    match account.provider {
+        ProviderType::AliYunDrive => {
+            let provider = AliYunDriveProvider::new(account).await?;
+            Ok(Box::new(provider))
+        }
+        ProviderType::WebDAV => {
+            let provider = WebDavProvider::new(account).await?;
+            Ok(Box::new(provider))
+        }
+        _ => Err(format!("Unsupported provider type: {:?}", account.provider).into()),
+    }
 }
 
 #[derive(Debug, Clone)]

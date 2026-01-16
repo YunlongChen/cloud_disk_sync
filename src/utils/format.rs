@@ -10,6 +10,25 @@ pub fn format_bytes(bytes: u64) -> String {
     format!("{:.2} {}", value, unit)
 }
 
+pub fn truncate_string(s: &str, max_width: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+
+    let mut width = 0;
+    let mut result = String::new();
+    for c in s.chars() {
+        let w = UnicodeWidthChar::width(c).unwrap_or(0);
+        if width + w > max_width {
+            if width + 3 <= max_width {
+                result.push_str("...");
+            }
+            break;
+        }
+        width += w;
+        result.push(c);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::format_bytes;
