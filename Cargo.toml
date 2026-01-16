@@ -2,6 +2,9 @@
 name = "cloud-disk-sync"
 version = "0.1.0"
 edition = "2024"
+description = "a cloud disk sync tool"
+license = "MIT"
+license-file = "LICENSE"
 
 [workspace.package]
 edition = "2021"
