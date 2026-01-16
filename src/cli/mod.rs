@@ -1,5 +1,6 @@
 // src/cli/mod.rs
-pub mod info; // Add this line
+pub mod info;
+pub mod browse;
 
 use clap::{Parser, Subcommand};
 
@@ -147,6 +148,30 @@ pub enum AccountCmd {
 
         /// Account ID or Name (positional)
         name_or_id: Option<String>,
+    },
+    /// Browse files in an account
+    Browse {
+        /// Account ID or Name
+        #[arg(short, long)]
+        id: Option<String>,
+
+        /// Account ID or Name (positional)
+        name_or_id: Option<String>,
+
+        /// Path to browse
+        #[arg(short, long)]
+        path: Option<String>,
+
+        /// Path to browse (positional)
+        path_pos: Option<String>,
+
+        /// Recursively list files
+        #[arg(short, long)]
+        recursive: bool,
+
+        /// Show detailed file info
+        #[arg(short, long)]
+        detail: bool,
     },
 }
 

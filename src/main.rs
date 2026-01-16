@@ -71,6 +71,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let target_id = name_or_id.or(id).ok_or("必须提供账户ID或名称 (使用 --id 或直接提供名称)")?;
                 cmd_account_status(&config_manager, &target_id).await?;
             }
+            cli::AccountCmd::Browse {
+                id,
+                name_or_id,
+                path,
+                path_pos,
+                recursive,
+                detail,
+            } => {
+                let target_id = name_or_id.or(id).ok_or("必须提供账户ID或名称")?;
+                let target_path = path_pos.or(path).unwrap_or("/".to_string());
+
+                cmd_browse_account(&config_manager, &target_id, target_path, recursive, detail).await?;
+            }
         },
         Commands::Tasks(cmd) => match cmd {
             cli::TaskCmd::Create {
@@ -128,6 +141,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    Ok(())
+}
+
+async fn cmd_browse_account(
+    config_manager: &ConfigManager,
+    id_or_name: &str,
+    path: String,
+    _recursive: bool,
+    _detail: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let id = find_account_id(config_manager, id_or_name)
+        .ok_or_else(|| format!("未找到账户: {}", id_or_name))?;
+
+    let account = config_manager.get_account(&id).ok_or("Account not found")?;
+
+    println!("正在连接账户 {}...", account.name);
+    let provider = create_provider(&account).await?;
+
+    // Convert Box<dyn StorageProvider> to Arc<dyn StorageProvider>
+    let provider: std::sync::Arc<dyn StorageProvider> = std::sync::Arc::from(provider);
+
+    cli::browse::run_browse_tui(provider, path).await?;
+    
     Ok(())
 }
 
@@ -217,7 +253,7 @@ async fn cmd_diff_task(
     println!("\n📄 文件列表详情:");
     
     // 使用 prettytable 格式化输出
-    use prettytable::{row, Table, format};
+    use prettytable::{format, row, Table};
 
     // 按路径排序，方便查看
     diff_result.files.sort_by(|a, b| a.path.cmp(&b.path));
