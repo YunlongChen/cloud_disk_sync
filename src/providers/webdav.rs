@@ -72,7 +72,16 @@ impl WebDavProvider {
     /// 获取完整的 URL
     fn get_full_url(&self, path: &str) -> String {
         let path = path.trim_start_matches('/');
-        let url = format!("{}/{}", self.base_url, path);
+        
+        // Split path into components and encode each one
+        let encoded_path: Vec<String> = path
+            .split('/')
+            .map(|component| urlencoding::encode(component).to_string())
+            .collect();
+            
+        let encoded_path_str = encoded_path.join("/");
+        
+        let url = format!("{}/{}", self.base_url, encoded_path_str);
         debug!(path = %path, url = %url, "构建完整 URL");
         url
     }
@@ -578,6 +587,16 @@ mod tests {
         assert_eq!(
             provider.get_full_url("test/file.txt"),
             "http://localhost:8080/dav/test/file.txt"
+        );
+        
+        // Test URL encoding
+        assert_eq!(
+            provider.get_full_url("/test/file with spaces.txt"),
+            "http://localhost:8080/dav/test/file%20with%20spaces.txt"
+        );
+        assert_eq!(
+            provider.get_full_url("/test/special{}.txt"),
+            "http://localhost:8080/dav/test/special%7B%7D.txt"
         );
     }
 

@@ -37,6 +37,17 @@ impl SyncReport {
         self.statistics.add_file_result(&result);
         self.files.push(result);
     }
+
+    pub(crate) fn add_failure(&mut self, diff_path: &String, operation: FileOperation, error: String) {
+        let mut result = FileSyncResult::new(diff_path.clone(), operation);
+        result.status = FileSyncStatus::Failed;
+        result.error = Some(error.clone());
+        
+        self.statistics.add_file_result(&result);
+        self.files.push(result);
+        // Add to errors list for summary
+        self.errors.push(format!("Failed to process {}: {}", diff_path, error));
+    }
 }
 
 impl SyncReport {
