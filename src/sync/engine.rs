@@ -166,7 +166,7 @@ impl SyncEngine {
                             let target_full_path = {
                                 let base_path = std::path::Path::new(&task.target_path);
                                 let rel_path = std::path::Path::new(&file_diff.path);
-                                base_path.join(rel_path).to_string_lossy().to_string()
+                                base_path.join(rel_path).to_string_lossy().replace('\\', "/")
                             };
                             match target_provider.mkdir(&target_full_path).await {
                                 Ok(_) => {
@@ -282,7 +282,7 @@ impl SyncEngine {
                     let target_full_path = {
                         let base_path = std::path::Path::new(&task.target_path);
                         let rel_path = std::path::Path::new(&file_diff.path);
-                        base_path.join(rel_path).to_string_lossy().to_string()
+                        base_path.join(rel_path).to_string_lossy().replace('\\', "/")
                     };
 
                     match target_provider.delete(&target_full_path).await {
@@ -310,7 +310,7 @@ impl SyncEngine {
                     let target_full_path = {
                         let base_path = std::path::Path::new(&task.target_path);
                         let rel_path = std::path::Path::new(&file_diff.path);
-                        base_path.join(rel_path).to_string_lossy().to_string()
+                        base_path.join(rel_path).to_string_lossy().replace('\\', "/")
                     };
                     match target_provider.mkdir(&target_full_path).await {
                         Ok(_) => {
@@ -742,7 +742,7 @@ impl SyncEngine {
         let join_path = |base: &str, rel: &str| -> String {
             let base_path = std::path::Path::new(base);
             let rel_path = std::path::Path::new(rel);
-            base_path.join(rel_path).to_string_lossy().to_string()
+            base_path.join(rel_path).to_string_lossy().replace('\\', "/")
         };
 
         let source_full_path = join_path(&task.source_path, &file_diff.path);
