@@ -1,5 +1,8 @@
 // src/cli/mod.rs
+pub mod info; // Add this line
+
 use clap::{Parser, Subcommand};
+
 
 #[derive(Parser)]
 #[command(name = "cloud-disk-sync")]
@@ -83,6 +86,9 @@ pub enum Commands {
         #[arg(short = 't', long = "task")]
         id: Option<String>,
     },
+
+    /// Show system and program info
+    Info,
 }
 
 #[derive(Subcommand)]

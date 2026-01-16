@@ -1,9 +1,11 @@
 mod migrator;
+mod security;
 mod utils;
 mod validator;
 
 use crate::encryption::types::{EncryptionAlgorithm, IvMode};
 use crate::error::ConfigError;
+use security::SecurityManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -136,6 +138,7 @@ pub struct ConfigManager {
     config_path: PathBuf,
     accounts: HashMap<String, AccountConfig>,
     tasks: HashMap<String, SyncTask>,
+    security_manager: SecurityManager,
 }
 
 impl ConfigManager {
@@ -159,14 +162,16 @@ impl ConfigManager {
     }
 
     pub fn new_with_path(config_path: PathBuf) -> Result<Self, ConfigError> {
-        if let Some(parent) = config_path.parent() {
-            create_dir_all(parent).unwrap();
-        }
+        let parent = config_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        create_dir_all(parent).unwrap();
+
+        let security_manager = SecurityManager::new(parent);
 
         let mut manager = Self {
             config_path,
             accounts: HashMap::new(),
             tasks: HashMap::new(),
+            security_manager,
         };
 
         if manager.config_path.exists() {
@@ -178,26 +183,67 @@ impl ConfigManager {
     pub fn load(&mut self) -> Result<(), ConfigError> {
         if self.config_path.exists() {
             let content = fs::read_to_string(&self.config_path).unwrap();
-            let config: ConfigFile = serde_yaml::from_str(&content).unwrap();
+            let mut config: ConfigFile = serde_yaml::from_str(&content).unwrap();
+
+            // 执行配置迁移
+            let config_dir = self.config_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+            let mut migration_occurred = false;
+            
+            // 只要版本不是 0.1.0，就尝试迁移/重置
+            if config.version != "0.1.0" {
+                if let Err(e) = migrator::ConfigMigrator::migrate(&mut config, config_dir) {
+                    tracing::warn!("Config migration failed: {}", e);
+                } else {
+                    migration_occurred = true;
+                }
+            }
+
             self.accounts = config
                 .accounts
                 .into_iter()
-                .map(|a| (a.id.clone(), a))
+                .map(|mut a| {
+                    // 解密凭据
+                    // 此时经过迁移，内存中的 config 应该已经是加密状态（如果是旧版本升级上来）
+                    // 或者是 ENC: 状态（如果是新版本读取）
+                    for (_, v) in a.credentials.iter_mut() {
+                        *v = self.security_manager.decrypt(v);
+                    }
+                    (a.id.clone(), a)
+                })
                 .collect();
             self.tasks = config
                 .tasks
                 .into_iter()
                 .map(|t| (t.id.clone(), t))
                 .collect();
+            
+            // 如果发生了迁移，保存更新后的配置
+            if migration_occurred {
+                tracing::info!("Config migration occurred, saving updated config...");
+                if let Err(e) = self.save() {
+                    tracing::error!("Failed to save migrated config: {}", e);
+                }
+            }
         }
         Ok(())
     }
 
     pub fn save(&self) -> Result<(), ConfigError> {
+        let accounts: Vec<AccountConfig> = self.accounts.values()
+            .cloned()
+            .map(|mut a| {
+                // 加密凭据
+                for (_, v) in a.credentials.iter_mut() {
+                    *v = self.security_manager.encrypt(v);
+                }
+                a
+            })
+            .collect();
+
         let config = ConfigFile {
-            version: "1.0.0".to_string(),
+            version: "0.1.0".to_string(), // Reset to 0.1.0
             global_settings: Default::default(),
-            accounts: self.accounts.values().cloned().collect(),
+            accounts,
             tasks: self.tasks.values().cloned().collect(),
             encryption_keys: vec![],
             plugins: vec![],
@@ -465,7 +511,7 @@ pub struct SecurityEncryptionSettings {
 impl ConfigFile {
     pub fn new() -> Self {
         Self {
-            version: "1.0.0".to_string(),
+            version: "0.1.0".to_string(),
             global_settings: GlobalSettings::default(),
             accounts: Vec::new(),
             tasks: Vec::new(),
@@ -481,7 +527,7 @@ impl ConfigFile {
         let mut errors = Vec::new();
 
         // 验证版本
-        if self.version != "1.0.0" {
+        if self.version != "0.1.0" {
             errors.push(format!("Unsupported config version: {}", self.version));
         }
 

@@ -123,11 +123,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .ok_or("必须提供任务ID或名称 (使用 --task 或直接提供名称)")?;
             cmd_diff_task(&config_manager, &target_id).await?;
         }
+        Commands::Info => {
+            crate::cli::info::print_info();
+        }
     }
 
     Ok(())
 }
 
+// Remove cmd_info function
 use crate::providers::{AliYunDriveProvider, StorageProvider, WebDavProvider};
 
 async fn create_provider(

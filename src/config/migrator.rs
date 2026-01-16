@@ -1,94 +1,45 @@
-use super::ConfigFile;
+use super::{ConfigFile, security::SecurityManager};
 use crate::error::Result;
 use uuid::Uuid;
+use std::path::Path;
 
 pub struct ConfigMigrator;
 
 impl ConfigMigrator {
-    pub fn migrate(config: &mut ConfigFile) -> Result<()> {
+    pub fn migrate(config: &mut ConfigFile, config_dir: &Path) -> Result<()> {
         let current_version = config.version.clone();
 
-        match current_version.as_str() {
-            "0.1.0" => {
-                Self::migrate_from_0_1_0_to_0_2_0(config)?;
-                Self::migrate_from_0_2_0_to_1_0_0(config)?;
-            }
-            "0.2.0" => {
-                Self::migrate_from_0_2_0_to_1_0_0(config)?;
-            }
-            "1.0.0" => {
-                // 已经是最新版本
-                return Ok(());
-            }
-            _ => {
-                return Err(crate::error::ConfigError::Invalid(format!(
-                    "Unsupported config version: {}",
-                    current_version
-                ))
-                .into());
-            }
-        }
+        // 无论当前是什么版本，只要不是 0.1.0，我们就统一迁移到 0.1.0
+        // 并确保凭据被加密
+        if current_version != "0.1.0" {
+             log::info!("Resetting/Migrating config version from {} to 0.1.0", current_version);
+             
+             // 确保基本配置存在
+             if config.security_settings.is_none() {
+                 config.security_settings = Some(super::SecuritySettings::default());
+             }
+             
+             if config.network_settings.is_none() {
+                config.network_settings = Some(super::NetworkSettings::default());
+             }
 
-        config.version = "1.0.0".to_string();
-        Ok(())
-    }
+             // 执行加密逻辑 (同之前的 1.1.0 逻辑)
+             let security_manager = SecurityManager::new(config_dir);
+             for account in &mut config.accounts {
+                for (_, value) in account.credentials.iter_mut() {
+                    if !value.starts_with("ENC:") {
+                        *value = security_manager.encrypt(value);
+                    }
+                }
+             }
 
-    fn migrate_from_0_1_0_to_0_2_0(config: &mut ConfigFile) -> Result<()> {
-        log::info!("Migrating config from 0.1.0 to 0.2.0");
-
-        // 为每个账户添加默认的限流配置
-        for account in &mut config.accounts {
-            if account.rate_limit.is_none() {
-                account.rate_limit = Some(super::RateLimitConfig {
-                    requests_per_minute: 60,
-                    max_concurrent: 5,
-                    chunk_size: 4 * 1024 * 1024, // 4MB
-                });
-            }
-        }
-
-        // 为每个任务添加默认的差异模式
-        for task in &mut config.tasks {
-            // 在旧版本中可能没有diff_mode字段
-            // 使用默认值
+             config.version = "0.1.0".to_string();
         }
 
         Ok(())
     }
 
-    fn migrate_from_0_2_0_to_1_0_0(config: &mut ConfigFile) -> Result<()> {
-        log::info!("Migrating config from 0.2.0 to 1.0.0");
-
-        // 添加缺失的默认值
-        if config.global_settings.data_dir.is_none() {
-            config.global_settings.data_dir = dirs::data_dir().map(|p| p.join("disksync"));
-        }
-
-        if config.network_settings.is_none() {
-            config.network_settings = Some(super::NetworkSettings::default());
-        }
-
-        if config.security_settings.is_none() {
-            config.security_settings = Some(super::SecuritySettings::default());
-        }
-
-        // 确保所有任务都有ID
-        for (i, task) in config.tasks.iter_mut().enumerate() {
-            if task.id.is_empty() {
-                task.id = format!("task_{}_{}", i, Uuid::new_v4().simple());
-            }
-        }
-
-        // 确保所有账户都有ID
-        for (i, account) in config.accounts.iter_mut().enumerate() {
-            if account.id.is_empty() {
-                account.id = format!("account_{}_{}", i, Uuid::new_v4().simple());
-            }
-        }
-
-        Ok(())
-    }
-
+    // Removed old specific migration functions as requested
     pub fn backup_config(config_path: &std::path::Path) -> Result<()> {
         let backup_dir = config_path.parent().unwrap().join("backups");
         if !backup_dir.exists() {
