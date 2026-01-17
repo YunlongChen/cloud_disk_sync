@@ -73,7 +73,7 @@ pipeline {
             steps {
                 sh '''
                     echo "=== Running Tests ==="
-                    time cargo test --release --locked --no-fail-fast --jobs $(nproc)
+                    time cargo test --locked --no-fail-fast --jobs $(nproc)
 
                     # 只运行单元测试
                     # cargo test --lib 
@@ -140,7 +140,7 @@ pipeline {
             '''
 
             // 只存档重要产物
-            archiveArtifacts artifacts: 'target/release/cloud-disk-sync*', fingerprint: true
+            // archiveArtifacts artifacts: 'target/release/cloud-disk-sync*', fingerprint: true
 
 
         }
