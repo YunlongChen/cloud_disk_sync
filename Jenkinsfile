@@ -4,17 +4,38 @@ pipeline {
             image 'jenkins-rust-agent:latest'
             label 'rust'  // 这个语法在某些Jenkins版本中可能有效，但并非所有版本都支持
             args '''
-                -v rust-cargo-registry:/usr/local/cargo/registry
-                -v rust-cargo-git:/usr/local/cargo/git
-                -v rust-target:/home/jenkins/agent/target
-                -e CARGO_TARGET_DIR=/home/jenkins/agent/target
+                -v /var/jenkins/cache/${JOB_NAME}/${BRANCH_NAME}/cargo_registry:/usr/local/cargo/registry
+                -v /var/jenkins/cache/${JOB_NAME}/${BRANCH_NAME}/git:/usr/local/cargo/git
+                -v /var/jenkins/cache/${JOB_NAME}/${BRANCH_NAME}/target:/app/target
+                -e CARGO_TARGET_DIR=/app/target
                 -e CARGO_HOME=/usr/local/cargo
+                -w /app
             '''
+            reuseNode true
             // 或者使用 registryUrl/registryCredentials 如果需要从私有仓库拉取
         }
     }
 
+    options {
+        skipDefaultCheckout(true)
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 20, unit: 'MINUTES')
+        retry(0)
+    }
+
+    parameters {
+        choice(
+            name: 'BUILD_TYPE',
+            choices: ['debug', 'release'],
+            description: '选择构建类型'
+        )
+    }
     environment {
+        // 计算缓存路径
+        CACHE_BASE = "/var/jenkins/cache/${JOB_NAME}"
+        CACHE_DIR = "${CACHE_BASE}/${BRANCH_NAME}"
+
         PATH = "/home/jenkins/.cargo/bin:${PATH}"   // 设置 Rust 相关环境变量
         RUST_BACKTRACE = '1'                        // 启用完整的错误回溯
         CARGO_INCREMENTAL = '1'                     // 启用增量编译（测试环境）,可能导致无法重现构建
@@ -22,13 +43,52 @@ pipeline {
         RUSTC_WRAPPER = ''                          // 不需要 sccache
     }
 
-    options {
-        buildDiscarder(logRotator(numToKeepStr: '10'))
-        timeout(time: 30, unit: 'MINUTES')
-        retry(0)
-    }
-
     stages {
+
+       // 阶段1：分支检查
+        stage('Branch Filter') {
+            steps {
+                script {
+                    echo "当前分支: ${BRANCH_NAME}"
+                    echo "任务名称: ${JOB_NAME}"
+
+                    // 定义需要构建的分支
+                    def allowedBranches = [
+                        'main', 'master', 'develop',
+                        'release/.*', 'hotfix/.*'
+                    ]
+
+                    def shouldRun = allowedBranches.any { pattern ->
+                        BRANCH_NAME == pattern || BRANCH_NAME.matches(pattern)
+                    }
+
+                    if (!shouldRun) {
+                        currentBuild.result = 'NOT_BUILT'
+                        echo "分支 ${BRANCH_NAME} 跳过构建"
+                        error("分支不在构建范围内")
+                    }
+
+                    echo "✅ 分支检查通过，开始构建流程"
+                }
+            }
+        }
+
+        // 阶段2：缓存初始化
+        stage('Initialize Cache') {
+            steps {
+                sh '''
+                    echo "初始化缓存目录: ${CACHE_DIR}"
+                    mkdir -p ${CACHE_DIR}/cargo_registry
+                    mkdir -p ${CACHE_DIR}/git
+                    mkdir -p ${CACHE_DIR}/target
+
+                    # 显示缓存状态
+                    echo "缓存目录大小:"
+                    du -sh ${CACHE_DIR} 2>/dev/null || echo "新缓存目录"
+                '''
+            }
+        }
+
         stage('Checkout') {
             steps {
                 checkout scm
@@ -85,6 +145,11 @@ pipeline {
         }
 
         stage('Clippy & Format Check') {
+            when {
+                anyOf {
+                    branch 'main'
+                }
+            }
             steps {
                     script {
                         // 只有特定分支或标签才执行耗时操作
@@ -142,17 +207,30 @@ pipeline {
             // 只存档重要产物
             // archiveArtifacts artifacts: 'target/release/cloud-disk-sync*', fingerprint: true
 
+            // 清理工作空间但不清理缓存
+            cleanWs(
+                cleanWhenAborted: true,
+                cleanWhenFailure: true,
+                cleanWhenNotBuilt: true,
+                cleanWhenUnstable: true,
+                cleanWhenSuccess: true,
+                deleteDirs: true
+            )
 
         }
 
         success {
             echo "✅ Build succeeded in ${currentBuild.durationString}"
+            echo "✅ 构建成功: ${JOB_NAME} - ${BRANCH_NAME}"
         }
 
         failure {
-            echo "❌ Build failed"
+            echo "❌ 构建失败: ${JOB_NAME} - ${BRANCH_NAME}"
             // 失败时输出详细日志
-            sh 'cargo build --verbose 2>&1 | tail -100'
+            sh '''
+                echo "最后100行构建日志:"
+                tail -100 /app/target/build.log 2>/dev/null || echo "无构建日志"
+            '''
         }
     }
 }
