@@ -1,8 +1,8 @@
 //! 115网盘手动测试模块
-//! 
+//!
 //! 该模块包含115网盘提供者的手动测试用例，用于验证基本功能。
 //! 这些测试需要有效的115网盘会话凭证，通过环境变量 `ONEONEFIVE_SESSION` 提供。
-//! 
+//!
 //! 使用方法：
 //! 1. 设置环境变量：`set ONEONEFIVE_SESSION=your_session_cookie`
 //! 2. 运行测试：`cargo test --test manual_oneonefive_test -- --ignored`
@@ -59,9 +59,9 @@ fn create_oneonefive_config(session: &str) -> AccountConfig {
 #[ignore]
 async fn test_oneonefive_connection_and_verification() {
     init_logging();
-    
+
     info!("🚀 开始115网盘连接和验证测试");
-    
+
     // 获取会话凭证
     let session = match get_oneonefive_session() {
         Ok(session) => {
@@ -76,9 +76,9 @@ async fn test_oneonefive_connection_and_verification() {
 
     // 创建配置
     let config = create_oneonefive_config(&session);
-    
+
     info!("正在初始化115网盘提供者...");
-    
+
     // 初始化提供者
     let provider_result = OneOneFiveProvider::new(&config).await;
     let provider = match provider_result {
@@ -110,9 +110,9 @@ async fn test_oneonefive_connection_and_verification() {
 #[ignore]
 async fn test_oneonefive_list_files() {
     init_logging();
-    
+
     info!("📁 开始115网盘文件列表获取测试");
-    
+
     // 获取会话凭证
     let session = match get_oneonefive_session() {
         Ok(session) => session,
@@ -137,31 +137,32 @@ async fn test_oneonefive_list_files() {
     match provider.list("/").await {
         Ok(files) => {
             info!("✅ 成功获取文件列表，共 {} 个文件/目录", files.len());
-            
+
             if files.is_empty() {
                 warn!("⚠️  根目录为空，这可能是正常的");
             } else {
                 info!("\n📋 文件列表详情:");
-                info!("{:<10} {:<20} {:<12} {}", "类型", "大小", "修改时间", "名称");
+                info!(
+                    "{:<10} {:<20} {:<12} {}",
+                    "类型", "大小", "修改时间", "名称"
+                );
                 info!("{}", "-".repeat(60));
-                
-                for file in files.iter().take(10) { // 只显示前10个
+
+                for file in files.iter().take(10) {
+                    // 只显示前10个
                     let file_type = if file.is_dir { "DIR" } else { "FILE" };
                     let size_str = if file.is_dir {
                         "-".to_string()
                     } else {
                         format_size(file.size)
                     };
-                    
+
                     info!(
                         "{:<10} {:<20} {:<12} {}",
-                        file_type,
-                        size_str,
-                        file.modified,
-                        file.path
+                        file_type, size_str, file.modified, file.path
                     );
                 }
-                
+
                 if files.len() > 10 {
                     info!("... 还有 {} 个文件未显示", files.len() - 10);
                 }
@@ -198,9 +199,9 @@ fn format_size(size: u64) -> String {
 #[ignore]
 async fn test_oneonefive_exists_check() {
     init_logging();
-    
+
     info!("🔍 开始115网盘文件存在性检查测试");
-    
+
     let session = match get_oneonefive_session() {
         Ok(session) => session,
         Err(e) => {
@@ -236,7 +237,7 @@ async fn test_oneonefive_exists_check() {
     // 测试第一个文件的存在性
     let test_file = &files[0];
     info!("正在检查文件 '{}' 是否存在...", test_file.path);
-    
+
     match provider.exists(&test_file.path).await {
         Ok(exists) => {
             if exists {
@@ -253,7 +254,7 @@ async fn test_oneonefive_exists_check() {
     // 测试一个不存在的文件
     let non_existent_file = "this_file_should_not_exist_12345.txt";
     info!("正在检查不存在的文件 '{}'...", non_existent_file);
-    
+
     match provider.exists(non_existent_file).await {
         Ok(exists) => {
             if !exists {
@@ -275,9 +276,9 @@ async fn test_oneonefive_exists_check() {
 #[ignore]
 async fn test_oneonefive_upload() {
     init_logging();
-    
+
     info!("⬆️  开始115网盘上传功能测试");
-    
+
     let session = match get_oneonefive_session() {
         Ok(session) => session,
         Err(e) => {
@@ -298,7 +299,7 @@ async fn test_oneonefive_upload() {
     // 创建测试文件
     let test_content = "Hello, 115 Cloud Disk! This is a test file for manual testing.";
     let test_file_path = "test_upload_file.txt";
-    
+
     // 先检查文件是否已存在
     info!("检查测试文件是否已存在...");
     match provider.exists(test_file_path).await {
@@ -320,14 +321,14 @@ async fn test_oneonefive_upload() {
     info!("   2. 获取上传token和服务器地址");
     info!("   3. 分块上传文件数据");
     info!("   4. 完成上传确认");
-    
+
     // 这里可以添加上传测试代码，当上传功能实现后
     /*
     let temp_file = create_temp_file(test_content).await?;
     match provider.upload(&temp_file, test_file_path).await {
         Ok(result) => {
             info!("✅ 文件上传成功: {:?}", result);
-            
+
             // 验证文件确实存在
             match provider.exists(test_file_path).await {
                 Ok(exists) => {
@@ -343,7 +344,7 @@ async fn test_oneonefive_upload() {
         Err(e) => error!("❌ 文件上传失败: {}", e),
     }
     */
-    
+
     info!("🔧 上传功能测试完成（功能待实现）");
 }
 
@@ -352,13 +353,13 @@ async fn test_oneonefive_upload() {
 #[ignore]
 async fn test_oneonefive_delete_with_caution() {
     init_logging();
-    
+
     warn!("⚠️  开始115网盘删除功能测试 - 此操作会实际删除文件，请谨慎使用！");
-    
+
     // 这个测试默认跳过，需要手动取消注释并谨慎使用
     info!("🔒 删除测试默认跳过，如需测试请手动取消注释");
     return;
-    
+
     /*
     // 以下是删除测试的示例代码
     let session = get_oneonefive_session()?;
@@ -367,7 +368,7 @@ async fn test_oneonefive_delete_with_caution() {
 
     // 先创建一个测试文件
     let test_file_path = "test_delete_file.txt";
-    
+
     // 删除测试文件
     match provider.delete(test_file_path).await {
         Ok(()) => info!("✅ 文件删除成功"),
@@ -381,14 +382,14 @@ async fn test_oneonefive_delete_with_caution() {
 #[ignore]
 async fn test_oneonefive_comprehensive() {
     init_logging();
-    
+
     info!("🎯 开始115网盘综合测试");
-    
+
     // 运行各个子测试
     test_oneonefive_connection_and_verification();
     test_oneonefive_list_files();
     test_oneonefive_exists_check();
-    
+
     info!("🎉 115网盘综合测试完成");
 }
 
