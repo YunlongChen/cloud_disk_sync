@@ -1,15 +1,9 @@
 pipeline {
     agent {
         docker {
-            label 'rust-docker'  // 使用我们在 Docker Cloud 中配置的标签
+            label 'rust'  // 使用我们在 Docker Cloud 中配置的标签
             image 'jenkins-rust-agent:latest'
-            args '''
-                -v /var/jenkins:/home/jenkins/agent:rw
-                -v /var/run/docker.sock:/var/run/docker.sock:ro
-                -e CARGO_HOME=/home/jenkins/agent/.cargo
-                -e RUSTUP_HOME=/home/jenkins/agent/.rustup
-                --user jenkins
-            '''
+            args '--user jenkins'
         }
     }
 
