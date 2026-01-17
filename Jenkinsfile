@@ -41,16 +41,16 @@ pipeline {
             parallel {
                 stage('Fetch Dependencies') {
                     steps {
-                        sh 'cargo fetch --locked'
+                        sh 'time cargo fetch --locked'
                     }
                 }
                 stage('Update Toolchain') {
                     steps {
                         sh '''
-                            rustup update --no-self-update
-                            rustup component add clippy rustfmt
                             rustc --version
                             cargo --version
+                            rustup update --no-self-update
+                            rustup component add clippy rustfmt
                         '''
                     }
                 }
@@ -109,7 +109,7 @@ pipeline {
             steps {
                 sh '''
                     echo "=== Generating Documentation ==="
-                    cargo doc --no-deps
+                    # time cargo doc --no-deps
 
                     # 如果文档需要对外开放
                     # mkdir -p target/doc
