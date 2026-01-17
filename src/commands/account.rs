@@ -73,12 +73,25 @@ pub async fn cmd_add_account(
         }
         ProviderType::OneOneFive => {
             println!("📝 添加 115 网盘账户");
+            println!("📱 请使用 115 App 扫描下方二维码进行授权：");
+            println!("(注意：当前为演示模式，请扫描后按回车继续)");
+
+            // 生成并显示二维码
+            let qr_url = "https://115.com/s/sw/test_qr_code";
+            qr2term::print_qr(qr_url).unwrap();
+
+            println!("\n🔗 授权链接: {}", qr_url);
+            println!("等待授权中... (按回车键模拟授权完成)");
+
+            let _ = Input::<String>::new().allow_empty(true).interact_text()?;
 
             let cookie = if let Some(t) = token {
                 t
             } else {
+                // 模拟获取到的 Token/Cookie
+                println!("✅ 授权成功！(模拟)");
                 Input::<String>::new()
-                    .with_prompt("请输入 115 网盘的 Cookie")
+                    .with_prompt("请输入 115 网盘的 Cookie (由于是演示，请手动输入)")
                     .interact_text()?
             };
 

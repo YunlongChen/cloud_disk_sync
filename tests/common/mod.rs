@@ -89,6 +89,10 @@ impl FaultInjectionProvider {
 
 #[async_trait]
 impl StorageProvider for FaultInjectionProvider {
+    async fn verify(&self) -> Result<(), SyncError> {
+        Ok(())
+    }
+
     async fn list(&self, path: &str) -> Result<Vec<FileInfo>, SyncError> {
         self.maybe_inject_fault().await?;
         self.inner.list(path).await

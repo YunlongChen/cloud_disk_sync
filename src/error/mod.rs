@@ -129,6 +129,9 @@ pub enum ProviderError {
 
     #[error("Provider permission denied: {0}")]
     PermissionDenied(String),
+
+    #[error("Feature not implemented: {0}")]
+    NotImplemented(String),
 }
 
 #[derive(Error, Debug)]

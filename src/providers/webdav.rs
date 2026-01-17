@@ -251,6 +251,10 @@ impl WebDavProvider {
 
 #[async_trait]
 impl StorageProvider for WebDavProvider {
+    async fn verify(&self) -> Result<(), SyncError> {
+        Ok(())
+    }
+
     /// 列出目录内容
     async fn list(&self, path: &str) -> Result<Vec<FileInfo>, SyncError> {
         let url = self.get_full_url(path);

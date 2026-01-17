@@ -5,6 +5,7 @@ mod core;
 mod encryption;
 mod error;
 mod models;
+mod mount;
 mod plugins;
 mod providers;
 mod report;
@@ -12,7 +13,10 @@ mod services;
 mod sync;
 mod utils;
 
+#[cfg(feature = "mount")]
+use crate::cli::MountCommands;
 use crate::cli::{AccountCmd, Cli, Commands, TaskCmd};
+
 use crate::commands::{
     account::{
         cmd_account_status, cmd_add_account, cmd_browse_account, cmd_list_accounts,
@@ -27,6 +31,10 @@ use crate::commands::{
     task::{cmd_create_task, cmd_list_tasks, cmd_remove_task},
     verify::cmd_verify_integrity,
 };
+
+#[cfg(feature = "mount")]
+use crate::commands::mount::cmd_mount;
+
 use crate::config::ConfigManager;
 use clap::Parser;
 
@@ -167,6 +175,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Info => {
             cmd_info();
+        }
+        #[cfg(feature = "mount")]
+        Commands::Mount(command) => {
+            cmd_mount(command)?;
         }
     }
 

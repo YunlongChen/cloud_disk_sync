@@ -28,6 +28,10 @@ impl MockProvider {
 
 #[async_trait]
 impl StorageProvider for MockProvider {
+    async fn verify(&self) -> Result<(), SyncError> {
+        Ok(())
+    }
+
     async fn list(&self, _path: &str) -> Result<Vec<FileInfo>, SyncError> {
         let files = self.files.lock().unwrap();
         Ok(files.values().cloned().collect())

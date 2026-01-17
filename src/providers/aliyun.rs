@@ -48,6 +48,10 @@ impl AliYunDriveProvider {
 
 #[async_trait]
 impl StorageProvider for AliYunDriveProvider {
+    async fn verify(&self) -> Result<(), SyncError> {
+        todo!()
+    }
+
     async fn list(&self, path: &str) -> Result<Vec<FileInfo>, SyncError> {
         Ok(vec![FileInfo {
             path: path.to_string(),

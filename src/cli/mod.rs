@@ -97,6 +97,30 @@ pub enum Commands {
 
     /// Show system and program info
     Info,
+
+    /// 挂载命令
+    #[cfg(feature = "mount")]
+    #[command(subcommand)]
+    Mount(MountCommands),
+}
+
+#[cfg(feature = "mount")]
+#[derive(Subcommand, Debug)]
+pub enum MountCommands {
+    /// 挂载
+    Mount {
+        #[arg(short, long)]
+        mountpoint: String,
+    },
+
+    /// 卸载
+    Unmount {
+        #[arg(short, long)]
+        mountpoint: String,
+    },
+
+    /// 列出所有挂载点
+    List {},
 }
 
 #[derive(Subcommand, Debug)]

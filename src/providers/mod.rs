@@ -1,7 +1,9 @@
 pub mod aliyun;
+pub mod oneonefive;
 pub mod webdav;
 
 pub use aliyun::AliYunDriveProvider;
+pub use oneonefive::OneOneFiveProvider;
 pub use webdav::WebDavProvider;
 
 use crate::config::{AccountConfig, ProviderType, RateLimitConfig};
@@ -15,6 +17,7 @@ use std::time::Duration;
 
 #[async_trait]
 pub trait StorageProvider: Send + Sync {
+    async fn verify(&self) -> Result<(), SyncError>;
     async fn list(&self, path: &str) -> Result<Vec<FileInfo>, SyncError>;
     async fn upload(&self, local_path: &Path, remote_path: &str)
     -> Result<UploadResult, SyncError>;
@@ -27,22 +30,6 @@ pub trait StorageProvider: Send + Sync {
     async fn mkdir(&self, path: &str) -> Result<(), SyncError>;
     async fn stat(&self, path: &str) -> Result<FileInfo, SyncError>;
     async fn exists(&self, path: &str) -> Result<bool, SyncError>;
-}
-
-pub async fn create_provider(
-    account: &AccountConfig,
-) -> Result<Box<dyn StorageProvider>, Box<dyn std::error::Error>> {
-    match account.provider {
-        ProviderType::AliYunDrive => {
-            let provider = AliYunDriveProvider::new(account).await?;
-            Ok(Box::new(provider))
-        }
-        ProviderType::WebDAV => {
-            let provider = WebDavProvider::new(account).await?;
-            Ok(Box::new(provider))
-        }
-        _ => Err(format!("Unsupported provider type: {:?}", account.provider).into()),
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +75,10 @@ impl<T: StorageProvider> RateLimitedProvider<T> {
 
 #[async_trait]
 impl<T: StorageProvider> StorageProvider for RateLimitedProvider<T> {
+    async fn verify(&self) -> Result<(), SyncError> {
+        Ok(())
+    }
+
     async fn list(&self, path: &str) -> Result<Vec<FileInfo>, SyncError> {
         self.limiter.acquire().await?;
         self.inner.list(path).await

@@ -15,7 +15,7 @@ async fn test_manual_webdav_connection() {
     init_logging();
     // 1. 配置 WebDAV 账户
     let mut credentials = HashMap::new();
-    credentials.insert("url".to_string(), "http://localhost:5241/dav".to_string());
+    credentials.insert("url".to_string(), "http://localhost:5242/dav".to_string());
     credentials.insert("username".to_string(), "webdav".to_string());
     credentials.insert("password".to_string(), "123456".to_string());
 
