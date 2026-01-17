@@ -35,11 +35,10 @@ pipeline {
                         echo "=== Rust Toolchain Info ==="
                         apt-get update && apt-get install -y curl
                         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile default
-                        rustup --version
                         rustc --version
                         cargo --version
                         # 更新到最新稳定版（可选）
-                        rustup update stable
+                        #rustup update stable
 
                         # 如果需要特定版本
                         # rustup default 1.70.0
