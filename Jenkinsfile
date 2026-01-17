@@ -2,8 +2,7 @@ pipeline {
     agent {
         docker {
             label 'rust'  // 使用我们在 Docker Cloud 中配置的标签
-            image 'jenkins-rust-agent:latest'
-            args '--user jenkins'
+            image 'jenkins/ssh-agent:jdk21'
         }
     }
 
