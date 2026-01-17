@@ -1,5 +1,6 @@
 use super::traits::RetryStrategy;
 use crate::error::SyncError;
+use rand::Rng;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -131,8 +132,8 @@ impl JitterRetry {
 
     fn add_jitter(&self, delay: Duration) -> Duration {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let jitter = rng.gen_range(-self.jitter_ratio..self.jitter_ratio);
+        let mut rng = rand::rng();
+        let jitter = rng.random_range(-self.jitter_ratio..self.jitter_ratio);
         let secs = delay.as_secs_f64() * (1.0 + jitter);
         Duration::from_secs_f64(secs)
     }

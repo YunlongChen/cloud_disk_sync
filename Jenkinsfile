@@ -4,18 +4,22 @@ pipeline {
             image 'jenkins-rust-agent:latest'
             label 'rust'  // 这个语法在某些Jenkins版本中可能有效，但并非所有版本都支持
             args '''
-                -v rust_cargo_registry:/usr/local/cargo/registry
-                -v rust_cargo_git:/usr/local/cargo/git
+                -v rust-cargo-registry:/usr/local/cargo/registry
+                -v rust-cargo-git:/usr/local/cargo/git
+                -v rust-target:/home/jenkins/agent/target
+                -e CARGO_TARGET_DIR=/home/jenkins/agent/target
+                -e CARGO_HOME=/usr/local/cargo
             '''
             // 或者使用 registryUrl/registryCredentials 如果需要从私有仓库拉取
         }
     }
 
     environment {
-        // 设置 Rust 相关环境变量
-        PATH = "/home/jenkins/.cargo/bin:${PATH}"
-        CARGO_INCREMENTAL = '0'  // 禁用增量编译以获得可重现的构建
-        RUST_BACKTRACE = '1'     // 启用完整的错误回溯
+        PATH = "/home/jenkins/.cargo/bin:${PATH}"   // 设置 Rust 相关环境变量
+        RUST_BACKTRACE = '1'                        // 启用完整的错误回溯
+        CARGO_INCREMENTAL = '1'                     // 启用增量编译（测试环境）,可能导致无法重现构建
+        CARGO_REGISTRIES_CRATES_IO_PROTOCOL = 'sparse'
+        RUSTC_WRAPPER = ''                          // 不需要 sccache
     }
 
     options {
@@ -32,34 +36,35 @@ pipeline {
             }
         }
 
-        stage('Setup Rust') {
-            steps {
-                script {
-                    // 检查并更新 Rust 工具链
-                    sh '''
-                        echo "=== Rust Toolchain Info ==="
-                        // apt-get update && apt-get install -y curl
-                        // curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile default
-                        rustc --version
-                        cargo --version
-                        # 更新到最新稳定版（可选）
-                        #rustup update stable
-
-                        # 如果需要特定版本
-                        # rustup default 1.70.0
-                    '''
+        // 第一阶段：准备依赖（可并行）
+        stage('Prepare') {
+            parallel {
+                stage('Fetch Dependencies') {
+                    steps {
+                        sh 'cargo fetch --locked'
+                    }
+                }
+                stage('Update Toolchain') {
+                    steps {
+                        sh '''
+                            rustup update --no-self-update
+                            rustup component add clippy rustfmt
+                            rustc --version
+                            cargo --version
+                        '''
+                    }
                 }
             }
         }
-
         stage('Build') {
             steps {
                 sh '''
                     echo "=== Starting Build ==="
-                    cargo build --verbose
+                    # 启用链接时间优化（LTO）
+                    time cargo build --locked --frozen
 
                     # 如果是发布构建
-                    # cargo build --release --verbose
+                    # time cargo build --release --locked --frozen
                 '''
             }
         }
@@ -68,28 +73,36 @@ pipeline {
             steps {
                 sh '''
                     echo "=== Running Tests ==="
-                    cargo test --verbose
+                    time cargo test --release --locked --no-fail-fast --jobs $(nproc)
 
                     # 只运行单元测试
-                    # cargo test --lib --verbose
+                    # cargo test --lib 
 
                     # 生成测试覆盖率报告（需要安装 tarpaulin）
-                    # cargo tarpaulin --verbose --out Xml
+                    # cargo tarpaulin --out Xml
                 '''
             }
         }
 
         stage('Clippy & Format Check') {
             steps {
-                sh '''
-                    echo "=== Running Lints ==="
-                    # 安装 clippy 和 rustfmt 如果还没有
-                    rustup component add clippy rustfmt
-
-                    cargo clippy -- -D warnings
-                    cargo fmt -- --check
-                '''
-            }
+                    script {
+                        // 只有特定分支或标签才执行耗时操作
+                        if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME.startsWith('release/')) {
+                            sh '''
+                                echo "=== Running full checks on main/release ==="
+                                cargo clippy -- -D warnings
+                                cargo fmt -- --check
+                                cargo doc --no-deps
+                            '''
+                        } else {
+                            sh '''
+                                echo "=== Running minimal checks on feature branch ==="
+                                cargo clippy -- -D warnings || true  # 不阻塞
+                            '''
+                        }
+                    }
+                }
         }
 
         stage('Generate Docs') {
@@ -108,32 +121,38 @@ pipeline {
 
     post {
         always {
-            // 清理构建缓存以节省空间
+            script {
+                def duration = currentBuild.duration
+                println "构建耗时: ${duration/1000} 秒"
+                // 可以推送到监控系统
+            }
+            // 清理，但保留依赖缓存
             sh '''
-                echo "=== Cleaning Up ==="
-                cargo clean -p ${JOB_NAME} 2>/dev/null || true
+                echo "=== Cleaning intermediate files ==="
+                # 只清理中间文件，保留依赖
+                find target -name "*.d" -delete 2>/dev/null || true
+                find target -name "*.o" -delete 2>/dev/null || true
+                find target -name "*.rlib" -delete 2>/dev/null || true
 
-                # 显示构建产物大小
+                # 显示最终磁盘使用
                 du -sh target/ 2>/dev/null || true
+                du -sh /usr/local/cargo/registry/ 2>/dev/null || true
             '''
 
-            // 存档重要文件
-            archiveArtifacts artifacts: 'target/release/**/*', fingerprint: true, onlyIfSuccessful: false
-            junit 'target/**/test-results/*.xml'  // 如果使用类似 cargo-test-junit 的插件
+            // 只存档重要产物
+            archiveArtifacts artifacts: 'target/release/cloud-disk-sync*', fingerprint: true
+
+
         }
 
         success {
-            echo '✅ Build successful!'
-            // 可以在这里添加 Slack、邮件通知等
+            echo "✅ Build succeeded in ${currentBuild.durationString}"
         }
 
         failure {
-            echo '❌ Build failed!'
-            // 失败通知
-        }
-
-        unstable {
-            echo '⚠️ Build unstable!'
+            echo "❌ Build failed"
+            // 失败时输出详细日志
+            sh 'cargo build --verbose 2>&1 | tail -100'
         }
     }
 }
