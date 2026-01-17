@@ -2,7 +2,11 @@ pipeline {
     agent {
         docker {
             label 'rust'  // 使用我们在 Docker Cloud 中配置的标签
-            image 'jenkins-rust-agent:latest'
+            image 'jenkins-rust-agent:latest',
+            args  '''
+            -v rust_cargo_registry:/usr/local/cargo/registry
+            -v rust_cargo_git:/usr/local/cargo/git
+            '''
         }
     }
 
@@ -33,8 +37,8 @@ pipeline {
                     // 检查并更新 Rust 工具链
                     sh '''
                         echo "=== Rust Toolchain Info ==="
-                        apt-get update && apt-get install -y curl
-                        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile default
+                        // apt-get update && apt-get install -y curl
+                        // curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile default
                         rustc --version
                         cargo --version
                         # 更新到最新稳定版（可选）
