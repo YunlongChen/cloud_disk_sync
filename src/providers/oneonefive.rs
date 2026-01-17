@@ -1,3 +1,19 @@
+//! 115网盘存储提供者实现
+//! 
+//! 该模块提供了115网盘的存储服务集成，支持文件列表、上传、下载等基本操作。
+//! 
+//! # 功能特性
+//! - ✅ 文件列表获取
+//! - ✅ 连接验证
+//! - ✅ 文件存在性检查
+//! - ⬜ 文件上传（待实现）
+//! - ⬜ 文件下载（待实现）
+//! - ⬜ 目录创建（待实现）
+//! - ⬜ 文件详情查询（待实现）
+//! 
+//! # 认证方式
+//! 使用Cookie进行认证，需要在配置中提供有效的115网盘会话Cookie。
+
 use crate::config::AccountConfig;
 use crate::error::SyncError;
 use crate::providers::{DownloadResult, FileInfo, StorageProvider, UploadResult};
@@ -9,6 +25,7 @@ use std::time::Duration;
 
 const API_BASE_URL: &str = "https://proapi.115.com";
 
+/// 文件列表API响应结构
 #[derive(Debug, Deserialize)]
 struct FileListResponse {
     state: bool,
@@ -16,11 +33,13 @@ struct FileListResponse {
     data: Option<FileListData>,
 }
 
+/// 文件列表数据
 #[derive(Debug, Deserialize)]
 struct FileListData {
     data: Vec<FileItem>,
 }
 
+/// 文件项信息
 #[derive(Debug, Deserialize)]
 struct FileItem {
     fid: String,
@@ -31,12 +50,16 @@ struct FileItem {
                     // sha: String,    // hash
 }
 
+/// 基础API响应结构
 #[derive(Debug, Deserialize)]
 struct BaseResponse {
     state: bool,
     error: Option<String>,
 }
 
+/// 115网盘存储提供者
+/// 
+/// 负责与115网盘API进行交互，实现文件存储相关操作。
 pub struct OneOneFiveProvider {
     client: reqwest::Client,
     #[allow(dead_code)]
@@ -44,6 +67,18 @@ pub struct OneOneFiveProvider {
 }
 
 impl OneOneFiveProvider {
+    /// 创建新的115网盘提供者实例
+    /// 
+    /// # 参数
+    /// - `config`: 账户配置，必须包含有效的cookie凭证
+    /// 
+    /// # 返回
+    /// - 成功时返回 `OneOneFiveProvider` 实例
+    /// - 失败时返回 `SyncError`
+    /// 
+    /// # 错误
+    /// - 配置错误：缺少cookie或cookie格式无效
+    /// - 网络错误：HTTP客户端创建失败
     pub async fn new(config: &AccountConfig) -> Result<Self, SyncError> {
         let cookie = config
             .credentials
@@ -81,9 +116,17 @@ impl OneOneFiveProvider {
         Ok(Self { client, cookie })
     }
 
+    /// 获取指定目录的文件列表
+    /// 
+    /// # 参数
+    /// - `cid`: 目录ID，根目录为"0"
+    /// 
+    /// # 返回
+    /// - 成功时返回文件信息列表
+    /// - 失败时返回 SyncError
     async fn get_file_list(&self, cid: &str) -> Result<Vec<FileInfo>, SyncError> {
         let url = format!("{}/open/ufile/files", API_BASE_URL);
-        let params = [("foo", "bar"), ("baz", "quux")];
+        
         let resp = self
             .client
             .get(&url)
@@ -93,7 +136,6 @@ impl OneOneFiveProvider {
                 ("limit", "1000"),
                 ("show_dir", "1"),
             ])
-            .form(&params)
             .send()
             .await
             .map_err(|e| SyncError::Network(e.into()))?;
@@ -112,11 +154,22 @@ impl OneOneFiveProvider {
         let mut files = Vec::new();
         if let Some(data) = list_resp.data {
             for item in data.data {
-                let is_dir = item.fid == item.cid; // Simple check, might need adjustment based on actual API response
+                // 更准确地判断是否为目录
+                let is_dir = item.fid == item.cid || item.s.is_none();
+                
+                // 解析修改时间，处理可能的错误
+                let modified = item.t.parse::<i64>().unwrap_or_else(|_| {
+                    // 如果解析失败，使用当前时间戳
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64
+                });
+                
                 files.push(FileInfo {
                     path: item.n,
                     size: item.s.unwrap_or(0),
-                    modified: item.t.parse::<i64>().unwrap_or(0),
+                    modified,
                     hash: None, // item.sha is not always present or reliable in list
                     is_dir,
                 });
@@ -130,6 +183,8 @@ impl OneOneFiveProvider {
 #[async_trait]
 impl StorageProvider for OneOneFiveProvider {
     async fn verify(&self) -> Result<(), SyncError> {
+        // 通过获取根目录列表来验证连接是否有效
+        self.get_file_list("0").await?;
         Ok(())
     }
 
