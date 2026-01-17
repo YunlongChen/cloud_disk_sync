@@ -1,12 +1,13 @@
 pipeline {
     agent {
         docker {
-            label 'rust'  // 使用我们在 Docker Cloud 中配置的标签
-            image 'jenkins-rust-agent:latest',
-            args  '''
-            -v rust_cargo_registry:/usr/local/cargo/registry
-            -v rust_cargo_git:/usr/local/cargo/git
+            image 'jenkins-rust-agent:latest'
+            label 'rust'  // 这个语法在某些Jenkins版本中可能有效，但并非所有版本都支持
+            args '''
+                -v rust_cargo_registry:/usr/local/cargo/registry
+                -v rust_cargo_git:/usr/local/cargo/git
             '''
+            // 或者使用 registryUrl/registryCredentials 如果需要从私有仓库拉取
         }
     }
 
