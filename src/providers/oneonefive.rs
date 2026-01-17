@@ -1,7 +1,7 @@
 //! 115网盘存储提供者实现
-//! 
+//!
 //! 该模块提供了115网盘的存储服务集成，支持文件列表、上传、下载等基本操作。
-//! 
+//!
 //! # 功能特性
 //! - ✅ 文件列表获取
 //! - ✅ 连接验证
@@ -10,7 +10,7 @@
 //! - ⬜ 文件下载（待实现）
 //! - ⬜ 目录创建（待实现）
 //! - ⬜ 文件详情查询（待实现）
-//! 
+//!
 //! # 认证方式
 //! 使用Cookie进行认证，需要在配置中提供有效的115网盘会话Cookie。
 
@@ -58,7 +58,7 @@ struct BaseResponse {
 }
 
 /// 115网盘存储提供者
-/// 
+///
 /// 负责与115网盘API进行交互，实现文件存储相关操作。
 pub struct OneOneFiveProvider {
     client: reqwest::Client,
@@ -68,14 +68,14 @@ pub struct OneOneFiveProvider {
 
 impl OneOneFiveProvider {
     /// 创建新的115网盘提供者实例
-    /// 
+    ///
     /// # 参数
     /// - `config`: 账户配置，必须包含有效的cookie凭证
-    /// 
+    ///
     /// # 返回
     /// - 成功时返回 `OneOneFiveProvider` 实例
     /// - 失败时返回 `SyncError`
-    /// 
+    ///
     /// # 错误
     /// - 配置错误：缺少cookie或cookie格式无效
     /// - 网络错误：HTTP客户端创建失败
@@ -117,16 +117,16 @@ impl OneOneFiveProvider {
     }
 
     /// 获取指定目录的文件列表
-    /// 
+    ///
     /// # 参数
     /// - `cid`: 目录ID，根目录为"0"
-    /// 
+    ///
     /// # 返回
     /// - 成功时返回文件信息列表
     /// - 失败时返回 SyncError
     async fn get_file_list(&self, cid: &str) -> Result<Vec<FileInfo>, SyncError> {
         let url = format!("{}/open/ufile/files", API_BASE_URL);
-        
+
         let resp = self
             .client
             .get(&url)
@@ -156,7 +156,7 @@ impl OneOneFiveProvider {
             for item in data.data {
                 // 更准确地判断是否为目录
                 let is_dir = item.fid == item.cid || item.s.is_none();
-                
+
                 // 解析修改时间，处理可能的错误
                 let modified = item.t.parse::<i64>().unwrap_or_else(|_| {
                     // 如果解析失败，使用当前时间戳
@@ -165,7 +165,7 @@ impl OneOneFiveProvider {
                         .unwrap_or_default()
                         .as_secs() as i64
                 });
-                
+
                 files.push(FileInfo {
                     path: item.n,
                     size: item.s.unwrap_or(0),

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use cloud_disk_sync::error::{ProviderError, SyncError};
 use cloud_disk_sync::providers::{DownloadResult, FileInfo, StorageProvider, UploadResult};
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -11,8 +11,8 @@ use std::sync::Once;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
-use warp::http::Method;
 use warp::Filter;
+use warp::http::Method;
 
 static INIT: Once = Once::new();
 
@@ -443,11 +443,24 @@ pub async fn start_mock_server_with_seed(seed: Vec<(&str, &str, bool)>) -> (Sock
     // 这里绑定到端口0的作用是让系统分配
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
+    drop(listener); // Explicitly drop to ensure port is free before warp tries
 
     // 使用正确的 warp 服务器启动方式，兼容所有平台
     // 注意：warp 0.4 需要 SocketAddr，而不是 TcpListener
     let server_future = warp::serve(routes).run(addr);
     tokio::spawn(server_future);
+
+    // 等待服务器就绪 (防止 Linux/WSL 环境下 Connection refused)
+    let start = std::time::Instant::now();
+    loop {
+        if tokio::net::TcpStream::connect(addr).await.is_ok() {
+            break;
+        }
+        if start.elapsed() > std::time::Duration::from_secs(5) {
+            panic!("Mock server failed to start on {} within 5 seconds", addr);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 
     (addr, store)
 }

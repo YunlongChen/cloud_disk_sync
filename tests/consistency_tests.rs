@@ -5,6 +5,7 @@ use cloud_disk_sync::sync::engine::SyncEngine;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
+use tracing::info;
 
 mod common;
 use common::{generate_deep_structure, start_mock_server_with_seed};
@@ -231,6 +232,8 @@ async fn test_consistency_conflict_overwrite() {
 
     // Debug: Check if files exist
     let src_p = engine.get_provider("src").unwrap();
+
+    info!("Source files debug overwrite: {:?}文件引擎", "/file_root");
     let files = src_p.list("/file_root").await.unwrap();
     println!("Source files debug overwrite: {:?}", files);
 
