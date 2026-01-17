@@ -440,8 +440,10 @@ pub async fn start_mock_server_with_seed(seed: Vec<(&str, &str, bool)>) -> (Sock
         );
 
     let routes = put_route.or(get_route).or(delete_route).or(propfind_route);
-    let (addr, server) = warp::serve(routes).bind_ephemeral(([127, 0, 0, 1], 0));
-    tokio::spawn(server);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server_future = warp::serve(routes).run(addr);
+    tokio::spawn(server_future);
 
     (addr, store)
 }

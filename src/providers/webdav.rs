@@ -726,8 +726,10 @@ mod tests {
             });
 
             let routes = put_route.or(get_route);
-            let (addr, server) = warp::serve(routes).bind_ephemeral(([127, 0, 0, 1], 0));
-            tokio::spawn(server);
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            let server_future = warp::serve(routes).run(addr);
+            tokio::spawn(server_future);
 
             (addr, store)
         }
