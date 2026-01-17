@@ -63,8 +63,8 @@ impl StorageProvider for AliYunDriveProvider {
     }
     async fn upload(
         &self,
-        local_path: &Path,
-        remote_path: &str,
+        _local_path: &Path,
+        _remote_path: &str,
     ) -> Result<UploadResult, SyncError> {
         // 实现阿里云盘上传逻辑
         // 支持分片上传、断点续传
@@ -73,17 +73,17 @@ impl StorageProvider for AliYunDriveProvider {
 
     async fn download(
         &self,
-        remote_path: &str,
-        local_path: &Path,
+        _remote_path: &str,
+        _local_path: &Path,
     ) -> Result<DownloadResult, SyncError> {
         // 实现下载逻辑
         Ok(DownloadResult::default())
     }
 
-    async fn delete(&self, path: &str) -> Result<(), SyncError> {
+    async fn delete(&self, _path: &str) -> Result<(), SyncError> {
         Ok(())
     }
-    async fn mkdir(&self, path: &str) -> Result<(), SyncError> {
+    async fn mkdir(&self, _path: &str) -> Result<(), SyncError> {
         Ok(())
     }
     async fn stat(&self, path: &str) -> Result<FileInfo, SyncError> {
@@ -95,7 +95,7 @@ impl StorageProvider for AliYunDriveProvider {
             is_dir: true,
         })
     }
-    async fn exists(&self, path: &str) -> Result<bool, SyncError> {
+    async fn exists(&self, _path: &str) -> Result<bool, SyncError> {
         Ok(true)
     }
 }

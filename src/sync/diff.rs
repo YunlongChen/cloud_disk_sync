@@ -481,7 +481,7 @@ impl FileMetadata {
         Ok(file_metadata)
     }
 
-    pub fn calculate_hash(&mut self, algorithm: ChecksumType) -> Result<()> {
+    pub fn calculate_hash(&mut self, _algorithm: ChecksumType) -> Result<()> {
         use sha2::{Digest, Sha256};
         use std::fs::File;
         use std::io::Read;
@@ -768,12 +768,12 @@ impl DiffResult {
                 requires_chunking: diff.requires_chunking,
                 tags: diff.tags.join(","),
             })
-            .map_err(|e| SyncError::Unsupported("转换异常".into()))?;
+            .map_err(|_e| SyncError::Unsupported("转换异常".into()))?;
         }
 
         let data = String::from_utf8(
             wtr.into_inner()
-                .map_err(|e| SyncError::Unsupported("转换异常".into()))?,
+                .map_err(|_e| SyncError::Unsupported("转换异常".into()))?,
         )
         .map_err(|e| SyncError::Validation(e.to_string()))?;
 
@@ -1029,7 +1029,7 @@ impl DiffDetector {
         }
 
         // 处理检测到的移动
-        for (delete_idx, upload_idx, similarity) in potential_moves {
+        for (delete_idx, upload_idx, _similarity) in potential_moves {
             // 更新文件差异为移动操作
             let delete_path = result.files[delete_idx].path.clone();
             let upload_path = result.files[upload_idx].path.clone();

@@ -4,14 +4,14 @@ use crate::encryption::EncryptionManager;
 use crate::error::{ProviderError, SyncError};
 use crate::providers::{FileInfo, StorageProvider};
 use crate::report::{FileOperation, SyncReport};
-use crate::sync::diff::{ChecksumType, DiffAction, DiffResult, FileDiff};
+use crate::sync::diff::{DiffAction, DiffResult, FileDiff};
 use dashmap::DashMap;
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tokio::time::{Duration, sleep};
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct SyncEngine {
     providers: HashMap<String, Box<dyn StorageProvider>>,
@@ -876,10 +876,10 @@ impl SyncEngine {
         let temp_path = self.create_temp_file()?;
 
         // 下载文件
-        let download_result = source.download(&source_full_path, &temp_path).await?;
+        let _download_result = source.download(&source_full_path, &temp_path).await?;
 
         // 加密（如果需要）
-        let (encrypted_data, metadata) = if let Some(enc_config) = &task.encryption {
+        let (encrypted_data, _metadata) = if let Some(enc_config) = &task.encryption {
             self.encryption_manager
                 .encrypt_file(&temp_path, enc_config)
                 .await?
@@ -888,7 +888,7 @@ impl SyncEngine {
         };
 
         // 上传文件
-        let upload_result = if let Some(encrypted) = encrypted_data {
+        let _upload_result = if let Some(encrypted) = encrypted_data {
             // 上传加密文件
             target.upload(&encrypted, &target_full_path).await?
         } else {
@@ -907,12 +907,12 @@ impl SyncEngine {
 
     async fn resume_transfer(
         &self,
-        source_storage_provider: &dyn StorageProvider,
-        target_storage_provider: &dyn StorageProvider,
-        file_diff: &FileDiff,
-        task: &SyncTask,
-        data: &String,
-        reporter: &mut SyncReport,
+        _source_storage_provider: &dyn StorageProvider,
+        _target_storage_provider: &dyn StorageProvider,
+        _file_diff: &FileDiff,
+        _task: &SyncTask,
+        _data: &String,
+        _reporter: &mut SyncReport,
     ) {
         todo!()
     }

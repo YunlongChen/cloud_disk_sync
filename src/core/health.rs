@@ -84,7 +84,7 @@ impl HealthChecker for HealthCheckerImpl {
     }
 
     async fn check_connectivity(&self) -> Result<ConnectivityStatus> {
-        let mut status = ConnectivityStatus {
+        let status = ConnectivityStatus {
             internet: false,
             dns_resolution: false,
             proxy_configured: false,
@@ -92,7 +92,7 @@ impl HealthChecker for HealthCheckerImpl {
         };
 
         // 测试互联网连接
-        let internet_test = ConnectivityTest {
+        let _internet_test = ConnectivityTest {
             name: "Internet".into(),
             target: "8.8.8.8:53".into(),
             protocol: Protocol::UDP,

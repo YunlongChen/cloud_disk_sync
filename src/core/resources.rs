@@ -199,19 +199,19 @@ impl ResourceUsage {
 
     pub fn is_overloaded(&self) -> bool {
         // 检查是否超过任何限制
-        if let Some(limit) = self.memory_limit {
+        if let Some(_limit) = self.memory_limit {
             if self.memory_percentage > 90.0 {
                 return true;
             }
         }
 
-        if let Some(limit) = self.disk_limit {
+        if let Some(_limit) = self.disk_limit {
             if self.disk_percentage > 90.0 {
                 return true;
             }
         }
 
-        if let Some(limit) = self.file_descriptors_limit {
+        if let Some(_limit) = self.file_descriptors_limit {
             if self.file_descriptors_percentage > 90.0 {
                 return true;
             }
@@ -487,7 +487,7 @@ impl ResourceManagerImpl {
     }
 
     pub fn cleanup_old_resources(&self, max_age: Duration) -> Result<()> {
-        let now = Instant::now();
+        let _now = Instant::now();
 
         // 清理旧的内存句柄
         {

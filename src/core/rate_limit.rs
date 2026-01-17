@@ -171,7 +171,7 @@ impl RateLimiter for SlidingWindowRateLimiter {
         requests.len() as f64 / self.window_size.as_secs_f64()
     }
 
-    fn set_rate(&mut self, requests_per_second: f64) {
+    fn set_rate(&mut self, _requests_per_second: f64) {
         // 调整窗口大小或最大请求数
         // 这里简化处理
     }

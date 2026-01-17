@@ -1,7 +1,6 @@
 use super::{ConfigFile, security::SecurityManager};
 use crate::error::Result;
 use std::path::Path;
-use uuid::Uuid;
 
 pub struct ConfigMigrator;
 

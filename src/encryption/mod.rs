@@ -3,7 +3,7 @@ pub mod types;
 use crate::config::EncryptionConfig;
 use crate::encryption::types::EncryptionAlgorithm;
 use crate::error::EncryptionError;
-use aes_gcm::aead::{Aead, Nonce};
+use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -58,7 +58,7 @@ impl EncryptionManager {
         // 读取文件
         let data = tokio::fs::read(path)
             .await
-            .map_err(|e| EncryptionError::InvalidData)?;
+            .map_err(|_e| EncryptionError::InvalidData)?;
 
         // 加密数据
         let ciphertext = cipher

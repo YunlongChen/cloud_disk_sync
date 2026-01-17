@@ -53,7 +53,7 @@ pub fn cmd_generate_key(
 
     // 使用PBKDF2派生密钥加密密钥
     let salt: [u8; 16] = rand::random();
-    let mut encryption_key = [0u8; 32];
+    let encryption_key = [0u8; 32];
 
     // pbkdf2::pbkdf2::<hmac::Hmac<sha2::Sha256>>(
     //     password.as_bytes(),

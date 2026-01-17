@@ -1,7 +1,7 @@
 use crate::cli::ReportCommands;
 use crate::sync::engine::SyncEngine;
 use dialoguer::{Select, theme::ColorfulTheme};
-use prettytable::{Table, format, row};
+use prettytable::{Table, row};
 
 pub async fn cmd_report(
     task_id: &str,

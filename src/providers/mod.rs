@@ -6,7 +6,7 @@ pub use aliyun::AliYunDriveProvider;
 pub use oneonefive::OneOneFiveProvider;
 pub use webdav::WebDavProvider;
 
-use crate::config::{AccountConfig, ProviderType, RateLimitConfig};
+use crate::config::RateLimitConfig;
 use crate::core::rate_limit::TokenBucketRateLimiter;
 use crate::core::traits::RateLimiter;
 use crate::error::SyncError;

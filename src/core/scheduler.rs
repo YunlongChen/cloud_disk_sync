@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::time::{Duration, sleep};
+use tokio::time::Duration;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::error;
 use uuid::Uuid;
@@ -359,13 +359,13 @@ impl SchedulerManager {
         self.scheduler
             .add(job)
             .await
-            .map_err(|e| SyncError::Unknown("".into()))?;
+            .map_err(|_e| SyncError::Unknown("".into()))?;
         Ok(())
     }
 
     /// 执行任务
     async fn execute_task(
-        sync_engine: &Arc<SyncEngine>,
+        _sync_engine: &Arc<SyncEngine>,
         scheduled_task_id: &str,
         sync_task_id: &str,
         running_tasks: &Arc<RwLock<Vec<String>>>,
@@ -400,8 +400,8 @@ impl SchedulerManager {
         .catch_unwind()
         .await;
 
-        let duration = Utc::now() - start_time;
-        let success = match result {
+        let _duration = Utc::now() - start_time;
+        let _success = match result {
             Ok(Ok(_)) => {
                 log::info!("任务执行成功: {}", scheduled_task_id);
                 true
@@ -849,7 +849,7 @@ impl TaskNotifier {
         Ok(())
     }
 
-    async fn send_email(&self, config: &EmailConfig, message: &str) -> Result<()> {
+    async fn send_email(&self, _config: &EmailConfig, _message: &str) -> Result<()> {
         // 实现邮件发送逻辑
         // 这里使用 lettre 库
         Ok(())

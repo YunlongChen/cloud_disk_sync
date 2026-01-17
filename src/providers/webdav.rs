@@ -120,7 +120,7 @@ impl WebDavProvider {
         let mut in_prop = false;
         let mut in_getcontentlength = false;
         let mut in_resourcetype = false;
-        let mut in_collection = false;
+        let _in_collection = false;
 
         loop {
             match reader.read_event_into(&mut buf) {

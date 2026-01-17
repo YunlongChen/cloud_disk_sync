@@ -1,5 +1,3 @@
-use crate::config::SyncTask;
-use crate::error::SyncError;
 use crate::sync::diff::{DiffAction, FileDiff};
 use crate::utils::format_bytes;
 use chrono::{DateTime, Utc};
@@ -1112,7 +1110,7 @@ impl SyncStatistics {
 
     pub fn summary(&self) -> String {
         let success_rate = self.success_rate();
-        let verification_rate = self.verification_success_rate();
+        let _verification_rate = self.verification_success_rate();
 
         format!(
             "文件: {}/{} ({:.1}% 成功率), 数据: {}/{}, 速度: {}, 耗时: {:.1}s",

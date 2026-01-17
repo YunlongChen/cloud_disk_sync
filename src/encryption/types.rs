@@ -1,5 +1,3 @@
-use rand::RngCore;
-use rand::rngs::OsRng;
 // src/encryption/types.rs
 use serde::{Deserialize, Serialize};
 
