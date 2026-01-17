@@ -2,7 +2,8 @@ pipeline {
     agent {
         docker {
             label 'rust'  // 使用我们在 Docker Cloud 中配置的标签
-            image 'jenkins/ssh-agent:jdk21'
+            image 'jenkins-rust-agent:latest',
+            args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'
         }
     }
 
