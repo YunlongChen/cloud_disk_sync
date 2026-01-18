@@ -111,7 +111,7 @@ pipeline {
             parallel {
                 stage('Fetch Dependencies') {
                     steps {
-                        sh 'time cargo fetch --locked'
+                        sh 'cargo fetch --locked'
                     }
                 }
                 stage('Update Toolchain') {
@@ -131,10 +131,10 @@ pipeline {
                 sh '''
                     echo "=== Starting Build ==="
                     # 启用链接时间优化（LTO）
-                    time cargo build --locked --frozen
+                    cargo build --locked --frozen
 
                     # 如果是发布构建
-                    # time cargo build --release --locked --frozen
+                    # cargo build --release --locked --frozen
                 '''
             }
         }
@@ -143,7 +143,7 @@ pipeline {
             steps {
                 sh '''
                     echo "=== Running Tests ==="
-                    time cargo test --locked --no-fail-fast --jobs $(nproc)
+                    cargo test --locked --no-fail-fast --jobs $(nproc)
 
                     # 只运行单元测试
                     # cargo test --lib 
@@ -184,7 +184,7 @@ pipeline {
             steps {
                 sh '''
                     echo "=== Generating Documentation ==="
-                    # time cargo doc --no-deps
+                    # cargo doc --no-deps
 
                     # 如果文档需要对外开放
                     # mkdir -p target/doc
