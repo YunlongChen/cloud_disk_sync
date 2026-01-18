@@ -1,7 +1,7 @@
 pipeline {
     agent {
         docker {
-            image 'jenkins-rust-agent:latest'
+            image 'jenkins-agent-rust:jdk21'
             args '''
                 -v /var/jenkins/cache/${JOB_NAME}/${BRANCH_NAME}/cargo_registry:/usr/local/cargo/registry
                 -v /var/jenkins/cache/${JOB_NAME}/${BRANCH_NAME}/git:/usr/local/cargo/git
@@ -10,7 +10,10 @@ pipeline {
                 -e CARGO_HOME=/usr/local/cargo
                 -w /app
             '''
+            args '-u root:root'  // 用户权限
+            args '-v /var/run/docker.sock:/var/run/docker.sock'  // Docker in Docker
             reuseNode true
+            alwaysPull false  // 是否总是拉取最新镜像
         }
     }
 
