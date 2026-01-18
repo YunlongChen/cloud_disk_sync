@@ -93,10 +93,11 @@ impl ConfigMigrator {
             let entry = entry?;
             let path = entry.path();
 
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "yaml") {
-                if let Some(file_name) = path.file_name() {
-                    backups.push(file_name.to_string_lossy().into_owned());
-                }
+            if path.is_file()
+                && path.extension().is_some_and(|ext| ext == "yaml")
+                && let Some(file_name) = path.file_name()
+            {
+                backups.push(file_name.to_string_lossy().into_owned());
             }
         }
 

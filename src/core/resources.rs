@@ -154,24 +154,21 @@ impl ResourceUsage {
         // 获取系统内存信息
         let sys_info_result = sys_info::mem_info();
 
-        match sys_info_result {
-            Ok(mem_info) => {
-                self.memory_used = mem_info.total as usize - mem_info.free as usize;
-                self.memory_limit = Some(mem_info.total as usize);
-                self.memory_percentage = (self.memory_used as f64 / mem_info.total as f64) * 100.0;
-            }
-            Err(_) => {}
+        if let Ok(mem_info) = sys_info_result {
+            self.memory_used = mem_info.total as usize - mem_info.free as usize;
+            self.memory_limit = Some(mem_info.total as usize);
+            self.memory_percentage = (self.memory_used as f64 / mem_info.total as f64) * 100.0;
         }
 
         // 获取磁盘使用情况
-        if let Some(home_dir) = dirs::data_dir() {
-            if let Ok(disk_info) = fs2::available_space(&home_dir) {
-                // 这里需要计算已使用空间，但fs2只提供可用空间
-                // 实际中可能需要其他方式获取
-                self.disk_used = 0; // 简化处理
-                self.disk_limit = Some(disk_info);
-                self.disk_percentage = 0.0;
-            }
+        if let Some(home_dir) = dirs::data_dir()
+            && let Ok(disk_info) = fs2::available_space(&home_dir)
+        {
+            // 这里需要计算已使用空间，但fs2只提供可用空间
+            // 实际中可能需要其他方式获取
+            self.disk_used = 0; // 简化处理
+            self.disk_limit = Some(disk_info);
+            self.disk_percentage = 0.0;
         }
 
         // 获取文件描述符数量（仅限Unix）
@@ -199,22 +196,22 @@ impl ResourceUsage {
 
     pub fn is_overloaded(&self) -> bool {
         // 检查是否超过任何限制
-        if let Some(_limit) = self.memory_limit {
-            if self.memory_percentage > 90.0 {
-                return true;
-            }
+        if let Some(_limit) = self.memory_limit
+            && self.memory_percentage > 90.0
+        {
+            return true;
         }
 
-        if let Some(_limit) = self.disk_limit {
-            if self.disk_percentage > 90.0 {
-                return true;
-            }
+        if let Some(_limit) = self.disk_limit
+            && self.disk_percentage > 90.0
+        {
+            return true;
         }
 
-        if let Some(_limit) = self.file_descriptors_limit {
-            if self.file_descriptors_percentage > 90.0 {
-                return true;
-            }
+        if let Some(_limit) = self.file_descriptors_limit
+            && self.file_descriptors_percentage > 90.0
+        {
+            return true;
         }
 
         if self.cpu_usage > 90.0 {
@@ -266,22 +263,22 @@ impl ResourceLimits {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if let Some(limit) = self.max_memory_bytes {
-            if limit < 1024 * 1024 {
-                // 小于1MB
-                return Err(SyncError::Validation(
-                    "Memory limit too low (minimum 1MB)".into(),
-                ));
-            }
+        if let Some(limit) = self.max_memory_bytes
+            && limit < 1024 * 1024
+        {
+            // 小于1MB
+            return Err(SyncError::Validation(
+                "Memory limit too low (minimum 1MB)".into(),
+            ));
         }
 
-        if let Some(limit) = self.max_disk_bytes {
-            if limit < 1024 * 1024 {
-                // 小于1MB
-                return Err(SyncError::Validation(
-                    "Disk limit too low (minimum 1MB)".into(),
-                ));
-            }
+        if let Some(limit) = self.max_disk_bytes
+            && limit < 1024 * 1024
+        {
+            // 小于1MB
+            return Err(SyncError::Validation(
+                "Disk limit too low (minimum 1MB)".into(),
+            ));
         }
 
         if self.max_concurrent_tasks == 0 {

@@ -20,6 +20,12 @@ pub struct EncryptionMetadata {
     pub hmac: Hmac,
 }
 
+impl Default for EncryptionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EncryptionManager {
     pub fn new() -> Self {
         Self {

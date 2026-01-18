@@ -53,17 +53,13 @@ pub async fn select_account_and_path(
         .interact()?;
 
     let (account_id, _) = &account_list[selection];
-    let account = accounts.get(account_id).unwrap();
+    let _account = accounts.get(account_id).unwrap();
 
     // 尝试列出目录供选择（如果支持）
-    let path = match account.provider {
-        // 对于支持列出目录的提供商，可以实现交互式选择
-        // 目前简化为手动输入
-        _ => Input::<String>::new()
-            .with_prompt(format!("请输入{}路径", label))
-            .default("/".to_string())
-            .interact_text()?,
-    };
+    let path = Input::<String>::new()
+        .with_prompt(format!("请输入{}路径", label))
+        .default("/".to_string())
+        .interact_text()?;
 
     Ok((account_id.clone(), path))
 }

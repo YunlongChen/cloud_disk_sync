@@ -43,16 +43,16 @@ pub async fn cmd_create_task(
 
     // 选择或解析源账户
     let (source_account, source_path) = if let Some(s) = source_str {
-        parse_account_path_or_select(&s, &accounts, &account_list, &account_display, "源").await?
+        parse_account_path_or_select(&s, accounts, &account_list, &account_display, "源").await?
     } else {
-        select_account_and_path(&accounts, &account_list, &account_display, "源").await?
+        select_account_and_path(accounts, &account_list, &account_display, "源").await?
     };
 
     // 选择或解析目标账户
     let (target_account, target_path) = if let Some(t) = target_str {
-        parse_account_path_or_select(&t, &accounts, &account_list, &account_display, "目标").await?
+        parse_account_path_or_select(&t, accounts, &account_list, &account_display, "目标").await?
     } else {
-        select_account_and_path(&accounts, &account_list, &account_display, "目标").await?
+        select_account_and_path(accounts, &account_list, &account_display, "目标").await?
     };
 
     // 验证账户存在

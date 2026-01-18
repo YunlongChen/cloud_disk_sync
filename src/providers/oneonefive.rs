@@ -111,7 +111,7 @@ impl OneOneFiveProvider {
             .default_headers(headers)
             .timeout(Duration::from_secs(30))
             .build()
-            .map_err(|e| SyncError::Network(e.into()))?;
+            .map_err(SyncError::Network)?;
 
         Ok(Self { client, cookie })
     }
@@ -138,12 +138,9 @@ impl OneOneFiveProvider {
             ])
             .send()
             .await
-            .map_err(|e| SyncError::Network(e.into()))?;
+            .map_err(SyncError::Network)?;
 
-        let list_resp: FileListResponse = resp
-            .json()
-            .await
-            .map_err(|e| SyncError::Network(e.into()))?;
+        let list_resp: FileListResponse = resp.json().await.map_err(SyncError::Network)?;
 
         if !list_resp.state {
             return Err(SyncError::Provider(crate::error::ProviderError::ApiError(
@@ -230,12 +227,9 @@ impl StorageProvider for OneOneFiveProvider {
             .form(&params)
             .send()
             .await
-            .map_err(|e| SyncError::Network(e.into()))?;
+            .map_err(SyncError::Network)?;
 
-        let base_resp: BaseResponse = resp
-            .json()
-            .await
-            .map_err(|e| SyncError::Network(e.into()))?;
+        let base_resp: BaseResponse = resp.json().await.map_err(SyncError::Network)?;
 
         if !base_resp.state {
             return Err(SyncError::Provider(crate::error::ProviderError::ApiError(

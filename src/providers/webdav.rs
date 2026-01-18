@@ -278,7 +278,7 @@ impl StorageProvider for WebDavProvider {
             )
             .send()
             .await
-            .map_err(|e| SyncError::Network(e))?;
+            .map_err(SyncError::Network)?;
 
         if !response.status().is_success() {
             return Err(SyncError::Provider(ProviderError::ApiError(format!(
@@ -287,7 +287,7 @@ impl StorageProvider for WebDavProvider {
             ))));
         }
 
-        let body = response.text().await.map_err(|e| SyncError::Network(e))?;
+        let body = response.text().await.map_err(SyncError::Network)?;
 
         debug!("PROPFIND Response Body: {}", body);
 
@@ -304,9 +304,7 @@ impl StorageProvider for WebDavProvider {
         let start_time = SystemTime::now();
 
         // 读取文件内容
-        let file_data = tokio::fs::read(local_path)
-            .await
-            .map_err(|e| SyncError::Io(e))?;
+        let file_data = tokio::fs::read(local_path).await.map_err(SyncError::Io)?;
 
         let file_size = file_data.len() as u64;
 
@@ -318,7 +316,7 @@ impl StorageProvider for WebDavProvider {
             .body(file_data)
             .send()
             .await
-            .map_err(|e| SyncError::Network(e))?;
+            .map_err(SyncError::Network)?;
 
         if !response.status().is_success() {
             return Err(SyncError::Provider(ProviderError::ApiError(format!(

@@ -41,7 +41,7 @@ impl SecurityManager {
         let mut key_bytes = [0u8; 32];
         rand::rng().fill_bytes(&mut key_bytes);
 
-        if let Err(e) = fs::write(path, &key_bytes) {
+        if let Err(e) = fs::write(path, key_bytes) {
             warn!("Failed to save security key: {}", e);
         } else {
             info!("Generated new security key at {:?}", path);

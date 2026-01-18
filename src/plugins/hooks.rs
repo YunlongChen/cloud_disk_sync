@@ -106,6 +106,12 @@ pub struct HookContext {
     pub custom_data: std::collections::HashMap<String, serde_json::Value>,
 }
 
+impl Default for HookContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HookContext {
     pub fn new() -> Self {
         Self {

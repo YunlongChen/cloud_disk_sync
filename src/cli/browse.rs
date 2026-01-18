@@ -158,32 +158,30 @@ async fn run_app(
     loop {
         terminal.draw(|f| ui(f, app))?;
 
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == event::KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                        KeyCode::Down => app.next(),
-                        KeyCode::Up => app.previous(),
-                        KeyCode::Enter => {
-                            if let Some(selected) = app.table_state.selected() {
-                                if let Some(file) = app.files.get(selected) {
-                                    if file.is_dir {
-                                        app.current_path = file.path.clone();
-                                        fetch_files(&provider, app).await;
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Backspace | KeyCode::Left => {
-                            if let Some(parent) = app.go_up() {
-                                app.current_path = parent;
-                                fetch_files(&provider, app).await;
-                            }
-                        }
-                        _ => {}
+        if event::poll(Duration::from_millis(100))?
+            && let Event::Key(key) = event::read()?
+            && key.kind == event::KeyEventKind::Press
+        {
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                KeyCode::Down => app.next(),
+                KeyCode::Up => app.previous(),
+                KeyCode::Enter => {
+                    if let Some(selected) = app.table_state.selected()
+                        && let Some(file) = app.files.get(selected)
+                        && file.is_dir
+                    {
+                        app.current_path = file.path.clone();
+                        fetch_files(&provider, app).await;
                     }
                 }
+                KeyCode::Backspace | KeyCode::Left => {
+                    if let Some(parent) = app.go_up() {
+                        app.current_path = parent;
+                        fetch_files(&provider, app).await;
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -293,7 +291,7 @@ fn ui(f: &mut Frame, app: &mut AppState) {
                 file.path
                     .trim_end_matches('/')
                     .split('/')
-                    .last()
+                    .next_back()
                     .unwrap_or(&file.path)
             };
 

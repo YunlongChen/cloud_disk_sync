@@ -9,6 +9,12 @@ pub struct HookManager {
     hooks_by_priority: HashMap<PluginHook, Vec<Box<dyn HookHandler>>>,
 }
 
+impl Default for HookManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HookManager {
     pub fn new() -> Self {
         Self {
@@ -18,10 +24,7 @@ impl HookManager {
     }
 
     pub fn register_handler(&mut self, handler: Box<dyn HookHandler>) {
-        let handlers = self
-            .handlers
-            .entry("all".to_string())
-            .or_insert_with(Vec::new);
+        let handlers = self.handlers.entry("all".to_string()).or_default();
         handlers.push(handler);
     }
 
@@ -56,6 +59,12 @@ pub struct LoggingPlugin {
     name: String,
     version: String,
     enabled: bool,
+}
+
+impl Default for LoggingPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LoggingPlugin {

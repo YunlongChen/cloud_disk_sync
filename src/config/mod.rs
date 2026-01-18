@@ -515,6 +515,12 @@ pub struct SecurityEncryptionSettings {
     pub secure_key_storage: bool,
 }
 
+impl Default for ConfigFile {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConfigFile {
     pub fn new() -> Self {
         Self {

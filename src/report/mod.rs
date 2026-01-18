@@ -30,8 +30,8 @@ impl SyncReport {
     pub(crate) fn add_success(&mut self, diff_path: &String, diff_size: i64) {
         let mut result = FileSyncResult::new(diff_path.clone(), FileOperation::Upload);
         result.status = FileSyncStatus::Success;
-        result.size = diff_size.abs() as u64;
-        result.transferred_size = diff_size.abs() as u64;
+        result.size = diff_size.unsigned_abs();
+        result.transferred_size = diff_size.unsigned_abs();
 
         self.statistics.add_file_result(&result);
         self.files.push(result);
@@ -350,9 +350,8 @@ impl FileSyncResult {
         if let Some(source_info) = &diff.source_info {
             result.source_hash = source_info.file_hash.clone();
             result.file_type = FileType::from_metadata(source_info);
-            result.modified_time = Some(
-                DateTime::from_timestamp(source_info.modified, 0).unwrap_or_else(|| Utc::now()),
-            );
+            result.modified_time =
+                Some(DateTime::from_timestamp(source_info.modified, 0).unwrap_or_else(Utc::now));
             result.permissions = Some(source_info.permissions);
         }
 
@@ -438,8 +437,7 @@ impl FileSyncResult {
     }
 
     pub fn duration(&self) -> Option<std::time::Duration> {
-        self.duration_ms
-            .map(|ms| std::time::Duration::from_millis(ms))
+        self.duration_ms.map(std::time::Duration::from_millis)
     }
 
     pub fn human_readable_size(&self) -> String {
@@ -1025,10 +1023,7 @@ impl SyncStatistics {
         }
 
         // 更新文件类型统计
-        let stats = self
-            .file_type_stats
-            .entry(result.file_type)
-            .or_insert_with(FileTypeStats::new);
+        let stats = self.file_type_stats.entry(result.file_type).or_default();
         stats.add_file(result);
 
         // 更新操作类型统计
@@ -1127,7 +1122,7 @@ impl SyncStatistics {
     pub fn detailed_report(&self) -> String {
         let mut report = String::new();
 
-        report.push_str(&format!("📊 同步统计详情\n"));
+        report.push_str("📊 同步统计详情\n");
         report.push_str(&format!("文件总数: {}\n", self.total_files));
         report.push_str(&format!(
             "成功同步: {} ({:.1}%)\n",
@@ -1237,6 +1232,12 @@ pub struct FileTypeStats {
     pub total_duration: f64,
     /// 加密文件数量
     pub encrypted_count: usize,
+}
+
+impl Default for FileTypeStats {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FileTypeStats {

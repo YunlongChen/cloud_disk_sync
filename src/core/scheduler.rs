@@ -589,7 +589,7 @@ impl SchedulerManager {
 
         tasks.retain(|task| {
             // 保留未完成的任务、最近执行的任务、或者启用的任务
-            if task.enabled || task.last_run.map_or(false, |t| t > cutoff) {
+            if task.enabled || task.last_run.is_some_and(|t| t > cutoff) {
                 true
             } else {
                 log::info!("清理过期任务: {}", task.id);

@@ -173,39 +173,39 @@ impl SyncEngine {
                 DiffAction::Upload | DiffAction::Update => {
                     debug!(file = %file_diff.path, "Syncing file (Upload/Update)");
                     // 如果是目录，则创建目录
-                    if let Some(src_info) = &file_diff.source_info {
-                        if src_info.is_dir {
-                            debug!(path = %file_diff.path, "Creating directory (from Upload action)");
-                            let target_provider = self.get_provider(&task.target_account).ok_or(
-                                SyncError::Provider(ProviderError::NotFound(
+                    if let Some(src_info) = &file_diff.source_info
+                        && src_info.is_dir
+                    {
+                        debug!(path = %file_diff.path, "Creating directory (from Upload action)");
+                        let target_provider =
+                            self.get_provider(&task.target_account)
+                                .ok_or(SyncError::Provider(ProviderError::NotFound(
                                     task.target_account.clone(),
-                                )),
-                            )?;
-                            let target_full_path = {
-                                let base_path = std::path::Path::new(&task.target_path);
-                                let rel_path = std::path::Path::new(&file_diff.path);
-                                base_path
-                                    .join(rel_path)
-                                    .to_string_lossy()
-                                    .replace('\\', "/")
-                            };
-                            match target_provider.mkdir(&target_full_path).await {
-                                Ok(_) => {
-                                    info!(path = %file_diff.path, "Created directory");
-                                    report.add_success(&file_diff.path, 0);
-                                    continue; // 目录处理完毕
-                                }
-                                Err(e) => {
-                                    // 忽略目录已存在错误
-                                    // WebDavProvider::mkdir 返回什么错误？
-                                    // 假设是通用错误，暂时记录日志
-                                    warn!(path = %file_diff.path, error = %e, "Failed to create directory (might exist)");
-                                    // 不因为目录创建失败中断，尝试继续？或者算成功？
-                                    // 如果目录创建失败，后续文件上传可能会失败。
-                                    // 但如果是"已存在"，则没问题。
-                                    // 暂时 continue
-                                    continue;
-                                }
+                                )))?;
+                        let target_full_path = {
+                            let base_path = std::path::Path::new(&task.target_path);
+                            let rel_path = std::path::Path::new(&file_diff.path);
+                            base_path
+                                .join(rel_path)
+                                .to_string_lossy()
+                                .replace('\\', "/")
+                        };
+                        match target_provider.mkdir(&target_full_path).await {
+                            Ok(_) => {
+                                info!(path = %file_diff.path, "Created directory");
+                                report.add_success(&file_diff.path, 0);
+                                continue; // 目录处理完毕
+                            }
+                            Err(e) => {
+                                // 忽略目录已存在错误
+                                // WebDavProvider::mkdir 返回什么错误？
+                                // 假设是通用错误，暂时记录日志
+                                warn!(path = %file_diff.path, error = %e, "Failed to create directory (might exist)");
+                                // 不因为目录创建失败中断，尝试继续？或者算成功？
+                                // 如果目录创建失败，后续文件上传可能会失败。
+                                // 但如果是"已存在"，则没问题。
+                                // 暂时 continue
+                                continue;
                             }
                         }
                     }
@@ -401,6 +401,12 @@ pub struct VerificationResult {
     pub errors: Vec<String>,
 }
 
+impl Default for VerificationResult {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VerificationResult {
     pub fn new() -> Self {
         VerificationResult {
@@ -414,18 +420,10 @@ impl VerificationResult {
     }
 }
 
+#[derive(Default)]
 pub struct RepairResult {
     pub repaired_files: usize,
     pub repaired_bytes: u64,
-}
-
-impl Default for RepairResult {
-    fn default() -> Self {
-        RepairResult {
-            repaired_files: 0,
-            repaired_bytes: 0,
-        }
-    }
 }
 
 impl SyncEngine {
@@ -736,8 +734,7 @@ impl SyncEngine {
         // 辅助函数：标准化路径为相对路径
         let normalize_path = |full_path: &str, root: &str| -> String {
             let root = root.trim_end_matches('/');
-            if full_path.starts_with(root) {
-                let rel = &full_path[root.len()..];
+            if let Some(rel) = full_path.strip_prefix(root) {
                 rel.trim_start_matches('/').to_string()
             } else {
                 full_path.to_string()

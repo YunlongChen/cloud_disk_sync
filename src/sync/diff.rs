@@ -359,22 +359,21 @@ impl FileDiff {
     }
 
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| crate::error::SyncError::Serialization(e.into()))
+        serde_json::to_string_pretty(self).map_err(crate::error::SyncError::Serialization)
     }
 
     pub fn from_json(json: &str) -> Result<Self> {
-        serde_json::from_str(json).map_err(|e| crate::error::SyncError::Serialization(e.into()))
+        serde_json::from_str(json).map_err(crate::error::SyncError::Serialization)
     }
 
     pub fn is_encrypted(&self) -> bool {
         self.source_info
             .as_ref()
-            .map_or(false, |info| info.is_encrypted)
+            .is_some_and(|info| info.is_encrypted)
             || self
                 .target_info
                 .as_ref()
-                .map_or(false, |info| info.is_encrypted)
+                .is_some_and(|info| info.is_encrypted)
     }
 
     pub fn requires_decryption(&self) -> bool {
@@ -467,10 +466,10 @@ impl FileMetadata {
         }
 
         // 检测隐藏文件（Unix 系统以 . 开头）
-        if let Some(file_name) = path.file_name() {
-            if file_name.to_string_lossy().starts_with('.') {
-                file_metadata.is_hidden = true;
-            }
+        if let Some(file_name) = path.file_name()
+            && file_name.to_string_lossy().starts_with('.')
+        {
+            file_metadata.is_hidden = true;
         }
 
         // 检测 MIME 类型
@@ -512,9 +511,9 @@ impl FileMetadata {
     pub fn update_metadata_hash(&mut self) {
         let mut hasher = Sha256::new();
         hasher.update(self.path.to_string_lossy().as_bytes());
-        hasher.update(&self.size.to_be_bytes());
-        hasher.update(&self.modified.to_be_bytes());
-        hasher.update(&self.permissions.to_be_bytes());
+        hasher.update(self.size.to_be_bytes());
+        hasher.update(self.modified.to_be_bytes());
+        hasher.update(self.permissions.to_be_bytes());
 
         if let Some(hash) = &self.file_hash {
             hasher.update(hash.as_bytes());
@@ -657,6 +656,12 @@ pub struct DiffResult {
     pub action_stats: std::collections::HashMap<DiffAction, usize>,
 }
 
+impl Default for DiffResult {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DiffResult {
     pub fn new() -> Self {
         Self {
@@ -749,8 +754,7 @@ impl DiffResult {
     }
 
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| crate::error::SyncError::Serialization(e.into()))
+        serde_json::to_string_pretty(self).map_err(crate::error::SyncError::Serialization)
     }
 
     pub fn to_csv(&self) -> Result<String> {
@@ -793,6 +797,12 @@ pub struct DiffStats {
     pub file_types: std::collections::HashMap<String, usize>,
     pub oldest_file: Option<String>,
     pub newest_file: Option<String>,
+}
+
+impl Default for DiffStats {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DiffStats {
@@ -898,8 +908,8 @@ impl DiffDetector {
 
             if let Some(target_file) = target_map.remove(&path) {
                 // 文件在两端都存在
-                if self.is_file_changed(&source_file, &target_file) {
-                    let diff = self.create_file_diff(&source_file, Some(&target_file));
+                if self.is_file_changed(source_file, &target_file) {
+                    let diff = self.create_file_diff(source_file, Some(&target_file));
                     result.add_file(diff);
                 } else {
                     let diff = FileDiff::unchanged(path, source_file.clone(), target_file);
@@ -1016,12 +1026,12 @@ impl DiffDetector {
         for (i, diff_i) in result.files.iter().enumerate() {
             if diff_i.action == DiffAction::Delete {
                 for (j, diff_j) in result.files.iter().enumerate() {
-                    if diff_j.action == DiffAction::Upload {
-                        if let (Some(src), Some(dst)) = (&diff_i.target_info, &diff_j.source_info) {
-                            let similarity = self.calculate_file_similarity(src, dst);
-                            if similarity > 0.8 {
-                                potential_moves.push((i, j, similarity));
-                            }
+                    if diff_j.action == DiffAction::Upload
+                        && let (Some(src), Some(dst)) = (&diff_i.target_info, &diff_j.source_info)
+                    {
+                        let similarity = self.calculate_file_similarity(src, dst);
+                        if similarity > 0.8 {
+                            potential_moves.push((i, j, similarity));
                         }
                     }
                 }

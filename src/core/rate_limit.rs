@@ -153,11 +153,11 @@ impl RateLimiter for SlidingWindowRateLimiter {
                     Some(self.window_size - oldest.elapsed())
                 }
             };
-            if let Some(wait_time) = wait_time_opt {
-                if wait_time > Duration::ZERO {
-                    tokio::time::sleep(wait_time).await;
-                    continue;
-                }
+            if let Some(wait_time) = wait_time_opt
+                && wait_time > Duration::ZERO
+            {
+                tokio::time::sleep(wait_time).await;
+                continue;
             }
             let mut requests = self.requests.lock().unwrap();
             requests.push(Instant::now());

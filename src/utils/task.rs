@@ -38,12 +38,11 @@ pub fn remove_task_reports(task_id: &str) -> std::io::Result<()> {
     for entry in fs::read_dir(reports_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_file() {
-            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                if file_name.contains(task_id) {
-                    fs::remove_file(path)?;
-                }
-            }
+        if path.is_file()
+            && let Some(file_name) = path.file_name().and_then(|n| n.to_str())
+            && file_name.contains(task_id)
+        {
+            fs::remove_file(path)?;
         }
     }
     Ok(())

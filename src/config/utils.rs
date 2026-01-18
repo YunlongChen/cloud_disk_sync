@@ -103,7 +103,7 @@ impl ConfigUtils {
         if let Ok(proxy) = std::env::var("DISKSYNC_PROXY") {
             config
                 .network_settings
-                .get_or_insert_with(|| super::NetworkSettings::default())
+                .get_or_insert_with(super::NetworkSettings::default)
                 .proxy = Some(super::ProxyConfig {
                 url: proxy,
                 username: std::env::var("DISKSYNC_PROXY_USER").ok(),
