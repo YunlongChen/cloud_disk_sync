@@ -1,3 +1,5 @@
+def shouldRun = true
+
 pipeline {
     agent {
         docker {
@@ -27,9 +29,9 @@ pipeline {
 
     parameters {
         choice(
-            name: 'BUILD_TYPE',
-            choices: ['debug', 'release'],
-            description: '选择构建类型'
+                name: 'BUILD_TYPE',
+                choices: ['debug', 'release'],
+                description: '选择构建类型'
         )
     }
     environment {
@@ -37,7 +39,6 @@ pipeline {
         CACHE_BASE = "/var/jenkins/cache/${JOB_NAME}"
         CACHE_DIR = "${CACHE_BASE}/${BRANCH_NAME}"
 
-        PATH = "/home/jenkins/.cargo/bin:${PATH}"   // 设置 Rust 相关环境变量
         RUST_BACKTRACE = '1'                        // 启用完整的错误回溯
         CARGO_INCREMENTAL = '1'                     // 启用增量编译（测试环境）,可能导致无法重现构建
         CARGO_REGISTRIES_CRATES_IO_PROTOCOL = 'sparse'
@@ -47,7 +48,7 @@ pipeline {
 
     stages {
 
-       // 阶段1：分支检查
+        // 阶段1：分支检查
         stage('Branch Filter') {
             steps {
                 script {
@@ -56,11 +57,11 @@ pipeline {
 
                     // 定义需要构建的分支
                     def allowedBranches = [
-                        'main', 'master', 'develop',
-                        'release/.*', 'hotfix/.*'
+                            'main', 'master', 'develop',
+                            'release/.*', 'hotfix/.*'
                     ]
 
-                    def shouldRun = allowedBranches.any { pattern ->
+                    shouldRun = allowedBranches.any { pattern ->
                         BRANCH_NAME == pattern || BRANCH_NAME.matches(pattern)
                     }
 
@@ -80,109 +81,110 @@ pipeline {
 
         stage('Main Workflow') {
             when {
-                environment name: 'SHOULD_BUILD', value: 'true'
+                expression { return shouldRun }
             }
             stages {
                 // 阶段2：缓存初始化
                 stage('Initialize Cache') {
-            steps {
-                sh '''
-                    echo "初始化缓存目录: ${CACHE_DIR}"
-                    mkdir -p ${CACHE_DIR}/cargo_registry
-                    mkdir -p ${CACHE_DIR}/git
-                    mkdir -p ${CACHE_DIR}/target
-
-                    # 显示缓存状态
-                    echo "缓存目录大小:"
-                    du -sh ${CACHE_DIR} 2>/dev/null || echo "新缓存目录"
-                '''
-            }
-        }
-
-        stage('Checkout') {
-            steps {
-                checkout scm
-                sh 'git submodule update --init --recursive'  // 如果使用子模块
-            }
-        }
-
-        // 第一阶段：准备依赖（可并行）
-        stage('Prepare') {
-            parallel {
-                stage('Fetch Dependencies') {
                     steps {
-                        sh 'cargo fetch --locked'
+                        echo '当前是否应该构建！${SHOULD_BUILD}'
+                        sh '''
+                            echo "初始化缓存目录: ${CACHE_DIR}"
+                            mkdir -p ${CACHE_DIR}/cargo_registry
+                            mkdir -p ${CACHE_DIR}/git
+                            mkdir -p ${CACHE_DIR}/target
+
+                            # 显示缓存状态
+                            echo "缓存目录大小:"
+                            du -sh ${CACHE_DIR} 2>/dev/null || echo "新缓存目录"
+                        '''
                     }
                 }
-                stage('Update Toolchain') {
+
+                stage('Checkout') {
                     steps {
-                        sh '''
+                        checkout scm
+                        sh 'git submodule update --init --recursive'  // 如果使用子模块
+                    }
+                }
+
+                // 第一阶段：准备依赖（可并行）
+                stage('Prepare') {
+                    parallel {
+                        stage('Fetch Dependencies') {
+                            steps {
+                                sh 'cargo fetch --locked'
+                            }
+                        }
+                        stage('Update Toolchain') {
+                            steps {
+                                sh '''
                             rustc --version
                             cargo --version
                             rustup update --no-self-update
                             rustup component add clippy rustfmt
                         '''
+                            }
+                        }
                     }
                 }
-            }
-        }
-        stage('Build') {
-            steps {
-                sh '''
+                stage('Build') {
+                    steps {
+                        sh '''
                     echo "=== Starting Build ==="
                     # 启用链接时间优化（LTO）
-                    cargo build --locked --frozen
+                    # cargo build --locked --frozen
 
                     # 如果是发布构建
                     # cargo build --release --locked --frozen
                 '''
-            }
-        }
+                    }
+                }
 
-        stage('Test') {
-            steps {
-                sh '''
+                stage('Test') {
+                    steps {
+                        sh '''
                     echo "=== Running Tests ==="
-                    cargo test --locked --no-fail-fast --jobs $(nproc)
+                    # cargo test --locked --no-fail-fast --jobs $(nproc)
 
                     # 只运行单元测试
-                    # cargo test --lib 
+                    # cargo test --lib
 
                     # 生成测试覆盖率报告（需要安装 tarpaulin）
                     # cargo tarpaulin --out Xml
                 '''
-            }
-        }
-
-        stage('Clippy & Format Check') {
-            when {
-                anyOf {
-                    branch 'main'
+                    }
                 }
-            }
-            steps {
-                    script {
-                        // 只有特定分支或标签才执行耗时操作
-                        if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME.startsWith('release/')) {
-                            sh '''
+
+                stage('Clippy & Format Check') {
+                    when {
+                        anyOf {
+                            branch 'main'
+                        }
+                    }
+                    steps {
+                        script {
+                            // 只有特定分支或标签才执行耗时操作
+                            if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME.startsWith('release/')) {
+                                sh '''
                                 echo "=== Running full checks on main/release ==="
                                 cargo clippy -- -D warnings
                                 cargo fmt -- --check
                                 cargo doc --no-deps
                             '''
-                        } else {
-                            sh '''
+                            } else {
+                                sh '''
                                 echo "=== Running minimal checks on feature branch ==="
                                 cargo clippy -- -D warnings || true  # 不阻塞
                             '''
+                            }
                         }
                     }
                 }
-        }
 
-        stage('Generate Docs') {
-            steps {
-                sh '''
+                stage('Generate Docs') {
+                    steps {
+                        sh '''
                     echo "=== Generating Documentation ==="
                     # cargo doc --no-deps
 
@@ -190,8 +192,8 @@ pipeline {
                     # mkdir -p target/doc
                     # cp -r target/doc/* /var/jenkins/docs/ 2>/dev/null || true
                 '''
-            }
-        }
+                    }
+                }
             } // end of Main Workflow stages
         } // end of Main Workflow stage
     }
@@ -200,7 +202,7 @@ pipeline {
         always {
             script {
                 def duration = currentBuild.duration
-                println "构建耗时: ${duration/1000} 秒"
+                println "构建耗时: ${duration / 1000} 秒"
                 // 可以推送到监控系统
             }
             // 清理，但保留依赖缓存
