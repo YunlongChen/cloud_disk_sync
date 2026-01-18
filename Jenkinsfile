@@ -207,17 +207,6 @@ pipeline {
 
             // 只存档重要产物
             // archiveArtifacts artifacts: 'target/release/cloud-disk-sync*', fingerprint: true
-
-            // 清理工作空间但不清理缓存
-            cleanWs(
-                cleanWhenAborted: true,
-                cleanWhenFailure: true,
-                cleanWhenNotBuilt: true,
-                cleanWhenUnstable: true,
-                cleanWhenSuccess: true,
-                deleteDirs: true
-            )
-
         }
 
         success {
