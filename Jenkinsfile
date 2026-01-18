@@ -42,6 +42,7 @@ pipeline {
         CARGO_INCREMENTAL = '1'                     // 启用增量编译（测试环境）,可能导致无法重现构建
         CARGO_REGISTRIES_CRATES_IO_PROTOCOL = 'sparse'
         RUSTC_WRAPPER = ''                          // 不需要 sccache
+        SHOULD_BUILD = 'true'
     }
 
     stages {
@@ -63,19 +64,27 @@ pipeline {
                         BRANCH_NAME == pattern || BRANCH_NAME.matches(pattern)
                     }
 
-                    if (!shouldRun) {
-                        currentBuild.result = 'NOT_BUILT'
-                        echo "分支 ${BRANCH_NAME} 跳过构建"
-                        error("分支不在构建范围内")
+                    if (shouldRun) {
+                        echo "✅ 分支检查通过，开始构建流程"
+                        // 默认值即为true
+                        // env.SHOULD_BUILD = 'true'
+                    } else {
+                        currentBuild.result = 'SUCCESS'
+                        currentBuild.description = "Skipped: Branch ${BRANCH_NAME} not in build scope"
+                        echo "⚠️ 分支 ${BRANCH_NAME} 不在构建范围内，将优雅跳过后续流程"
+                        env.SHOULD_BUILD = 'false'
                     }
-
-                    echo "✅ 分支检查通过，开始构建流程"
                 }
             }
         }
 
-        // 阶段2：缓存初始化
-        stage('Initialize Cache') {
+        stage('Main Workflow') {
+            when {
+                environment name: 'SHOULD_BUILD', value: 'true'
+            }
+            stages {
+                // 阶段2：缓存初始化
+                stage('Initialize Cache') {
             steps {
                 sh '''
                     echo "初始化缓存目录: ${CACHE_DIR}"
@@ -183,6 +192,8 @@ pipeline {
                 '''
             }
         }
+            } // end of Main Workflow stages
+        } // end of Main Workflow stage
     }
 
     post {
