@@ -2,7 +2,6 @@ pipeline {
     agent {
         docker {
             image 'jenkins-rust-agent:latest'
-            label 'rust'  // 这个语法在某些Jenkins版本中可能有效，但并非所有版本都支持
             args '''
                 -v /var/jenkins/cache/${JOB_NAME}/${BRANCH_NAME}/cargo_registry:/usr/local/cargo/registry
                 -v /var/jenkins/cache/${JOB_NAME}/${BRANCH_NAME}/git:/usr/local/cargo/git
@@ -12,7 +11,6 @@ pipeline {
                 -w /app
             '''
             reuseNode true
-            // 或者使用 registryUrl/registryCredentials 如果需要从私有仓库拉取
         }
     }
 
